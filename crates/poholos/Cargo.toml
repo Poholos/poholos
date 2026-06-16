@@ -1,0 +1,15 @@
+[package]
+name = "poholos"
+description = "Peer-to-peer Bluetooth mesh messaging protocol."
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+homepage.workspace = true
+repository.workspace = true
+# Skeleton crate — not ready for crates.io yet. Flip to `true` once the
+# implementation and the LICENSE-MIT / LICENSE-APACHE files are in place.
+publish = false
+
+[dependencies]

@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/poholos", "crates/poholos-cli"]
+# The firmware crate is its own workspace: it cross-compiles for a bare-metal
+# target and must not join the host workspace build.
+exclude = ["crates/poholos-microbit"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+# Default for the workspace's app crates; the `poholos` core overrides this to
+# "MIT OR Apache-2.0" (see crates/poholos/Cargo.toml).
+license = "AGPL-3.0-only"
+homepage = "https://poholos.com"
+repository = "https://github.com/poholos/poholos"

@@ -1,0 +1,17 @@
+[package]
+name = "poholos-cli"
+description = "Console client for the poholos Bluetooth mesh protocol."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "poholos"
+path = "src/main.rs"
+
+[dependencies]
+poholos = { path = "../poholos" }

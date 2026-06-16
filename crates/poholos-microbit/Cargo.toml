@@ -1,0 +1,17 @@
+[package]
+name = "poholos-microbit"
+description = "poholos mesh node firmware for the BBC micro:bit v2."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "AGPL-3.0-only"
+publish = false
+
+# Standalone workspace: the firmware cross-compiles for a bare-metal target
+# (thumbv7em-none-eabihf) and must not join the host workspace build. The root
+# Cargo.toml excludes it. When fleshed out this crate becomes `no_std`/`no_main`
+# with a panic handler and an embedded entry point.
+[workspace]
+
+[dependencies]
+poholos = { path = "../poholos" }
