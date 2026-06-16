@@ -8,8 +8,19 @@ rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
-# Skeleton crate — not ready for crates.io yet. Flip to `true` once the
-# implementation and the LICENSE-MIT / LICENSE-APACHE files are in place.
+# Still incomplete (router / seen-cache / rotation pending); not ready for
+# crates.io. Flip to `true` once the public API is complete.
 publish = false
 
+[features]
+default = ["std"]
+# Enables std-backed types: `NodeId` and `Backtrace` capture in errors.
+std = []
+# Serde derives on the wire types (`Packet`, `Payload`, `WireId`, `Frame`).
+serde = ["dep:serde"]
+# Convenience postcard helpers in `poholos::codec` (no_std-friendly).
+postcard = ["serde", "dep:postcard"]
+
 [dependencies]
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+postcard = { version = "1", default-features = false, optional = true }
