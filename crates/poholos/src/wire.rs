@@ -79,10 +79,6 @@ pub struct Frame {
 
 impl Frame {
     /// The empty frame, used as ring-slot filler inside the crate.
-    #[expect(
-        dead_code,
-        reason = "ring-slot filler for the forthcoming seen-cache backend"
-    )]
     pub(crate) const EMPTY: Self = Self {
         len: 0,
         buf: [0u8; MAX_FRAME_LEN],

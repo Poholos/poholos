@@ -14,13 +14,18 @@ publish = false
 
 [features]
 default = ["std"]
-# Enables std-backed types: `NodeId` and `Backtrace` capture in errors.
-std = []
+# Enables std-backed types: `NodeId`, the LinkedHashSet `SeenCache` backend,
+# and `Backtrace` capture in errors.
+std = ["dep:hashlink"]
 # Serde derives on the wire types (`Packet`, `Payload`, `WireId`, `Frame`).
 serde = ["dep:serde"]
 # Convenience postcard helpers in `poholos::codec` (no_std-friendly).
 postcard = ["serde", "dep:postcard"]
 
 [dependencies]
+hashlink = { version = "0.12", optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 postcard = { version = "1", default-features = false, optional = true }
+
+[lints]
+workspace = true

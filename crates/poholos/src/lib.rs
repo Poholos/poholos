@@ -1,62 +1,93 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 Ivan Petrouchtchak
 
-//! Sans-io mesh messaging protocol over BLE advertising frames.
+//! Poholos mesh chat protocol over BLE advertising frames.
 //!
 //! Poholos (Ukrainian: *поголос* — rumour, hearsay) is a peer-to-peer mesh
-//! protocol designed to ride inside Bluetooth Low Energy legacy
+//! chat protocol designed to ride inside Bluetooth Low Energy legacy
 //! advertisements. The universal desktop baseline for those is ~31 bytes of
 //! advertising data, leaving a **22-byte on-air frame** once AD structure
 //! overhead is accounted for. Everything in this crate is built around that
 //! budget.
 //!
+//! # Design
+//!
 //! This crate is strictly **sans-io**: it never touches Bluetooth, sockets,
-//! clocks, or randomness, which keeps the protocol fully unit-testable and
-//! reusable from embedded (`no_std`) targets.
+//! clocks, or randomness. You feed received bytes into a [`Router`] and it
+//! tells you what to do — deliver a message locally, re-broadcast a frame,
+//! or ignore it. This keeps the protocol engine fully unit-testable and
+//! reusable from embedded (`no_std`) targets. All I/O lives in the
+//! application layer (see the `poholos-cli` crate).
 //!
-//! # Status
+//! The core types are:
 //!
-//! The core types are implemented: [`Packet`] and [`Payload`], the [`WireId`]
-//! and [`NodeId`] identities, the on-air [`Frame`] codec ([`encode`] /
-//! [`decode`]), and the [`fnv64`] hash. The routing state machine, the
-//! seen-cache, and the airtime scheduler are still to come.
+//! * [`Packet`] — a parsed protocol message, constructed via
+//!   [`Packet::hearsay`] (broadcast) or [`Packet::telegram`] (unicast).
+//! * [`Frame`] — an encoded on-air representation, at most
+//!   [`MAX_FRAME_LEN`] (22) bytes.
+//! * [`WireId`] — the compact 32-bit node identity used on the wire.
+//! * [`NodeId`] *(requires the `std` feature)* — the human-friendly node
+//!   name, e.g. `alice-3f2a`.
+//! * [`Router`] — the pure routing state machine with built-in duplicate
+//!   suppression via [`SeenCache`].
+//! * [`rotation::Rotation`] — the airtime scheduler for transports with a
+//!   single repeating broadcast slot (BLE advertising), shared by the
+//!   desktop CLI and embedded targets.
 //!
-//! # Example
+//! # Examples
 //!
-//! Encode a broadcast packet and decode it back:
+//! Two nodes exchanging a broadcast over a simulated link:
 //!
 //! ```
-//! use poholos::{Packet, WireId, decode, encode};
+//! use poholos::{Packet, RouteAction, Router, WireId};
 //!
-//! let src = WireId::of_name("alice-3f2a");
-//! let pkt = Packet::hearsay(src, 1, b"hi mesh")?;
+//! let alice = WireId::of_name("alice-3f2a");
+//! let bob = WireId::of_name("bob-9c01");
 //!
-//! let frame = encode(&pkt);
-//! assert_eq!(decode(frame.as_bytes())?, pkt);
+//! let mut a = Router::new(alice);
+//! let mut b = Router::new(bob);
+//!
+//! // Alice broadcasts. `originate` registers the packet as seen and
+//! // returns the encoded frame to hand to a transport.
+//! let pkt = Packet::hearsay(alice, 1, b"hi mesh")?;
+//! let frame = a.originate(&pkt);
+//!
+//! // Bob receives the raw bytes from his transport.
+//! match b.ingest(frame.as_bytes())? {
+//!     RouteAction::DeliverAndForward(p, _relay) => {
+//!         assert_eq!(p.payload(), b"hi mesh");
+//!     }
+//!     other => panic!("unexpected action: {other:?}"),
+//! }
+//!
+//! // The same frame again is suppressed as a duplicate.
+//! assert!(matches!(
+//!     b.ingest(frame.as_bytes())?,
+//!     RouteAction::Ignore(poholos::IgnoreReason::Duplicate)
+//! ));
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!
 //! # Feature flags
 //!
-//! * `std` *(default)* — enables [`NodeId`] and backtrace capture in errors.
-//!   Without it the crate is `no_std` and allocation-free.
+//! * `std` *(default)* — enables [`NodeId`], a `LinkedHashSet`-backed
+//!   [`SeenCache`], and backtrace capture in errors. Without it the crate
+//!   is `no_std` and allocation-free.
 //! * `serde` — serde derives on the wire types.
-//! * `postcard` — convenience `codec` helpers for postcard encoding.
+//! * `postcard` — convenience codec in [`codec`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod error;
 mod node_id;
 mod packet;
+mod router;
 mod seen;
 mod wire;
 
-// Declared as skeletons; their implementations are still to come.
-mod router;
-pub mod rotation;
-
 #[cfg(feature = "postcard")]
 pub mod codec;
+pub mod rotation;
 
 #[doc(inline)]
 pub use error::{PacketError, WireError};
@@ -70,7 +101,9 @@ pub use packet::{
     DEFAULT_TTL, MAX_PAYLOAD_HEARSAY, MAX_PAYLOAD_TELEGRAM, MAX_TTL, Packet, Payload,
 };
 #[doc(inline)]
-pub use seen::fnv64;
+pub use router::{IgnoreReason, RouteAction, Router};
+#[doc(inline)]
+pub use seen::{SEEN_CAPACITY, SeenCache, fnv64};
 #[doc(inline)]
 pub use wire::{
     COMPANY_ID, Frame, MAX_FRAME_LEN, WIRE_VERSION, decode, encode, manufacturer_frame,
