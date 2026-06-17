@@ -4,7 +4,7 @@ poholos is split-licensed by component.
 
 ## Open core — `crates/poholos`
 
-The sans-io protocol core library is dual-licensed under either of
+The poholos protocol core library is dual-licensed under either of
 
 - Apache License, Version 2.0
   ([crates/poholos/LICENSE-APACHE](crates/poholos/LICENSE-APACHE))
