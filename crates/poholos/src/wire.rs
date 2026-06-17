@@ -232,6 +232,10 @@ pub fn decode(bytes: &[u8]) -> Result<Packet, WireError> {
 /// The Bluetooth AD type tag for manufacturer-specific data.
 const AD_TYPE_MANUFACTURER: u8 = 0xFF;
 
+/// Bytes that precede the frame in a manufacturer-specific AD entry:
+/// one AD-type byte plus the 2-byte company id.
+const MANUFACTURER_HEADER_LEN: usize = 1 + 2;
+
 /// Extracts the poholos frame bytes from raw BLE advertising data.
 ///
 /// Advertising data is a sequence of *AD structures*, each
@@ -278,10 +282,10 @@ pub fn manufacturer_frame(ad: &[u8]) -> Option<&[u8]> {
         // `entry[0]` is the AD type (len >= 1 guarantees it); a
         // manufacturer entry needs at least the 2 company id bytes after.
         if entry[0] == AD_TYPE_MANUFACTURER
-            && entry.len() >= 3
+            && entry.len() >= MANUFACTURER_HEADER_LEN
             && u16::from_le_bytes([entry[1], entry[2]]) == COMPANY_ID
         {
-            return Some(&entry[3..]);
+            return Some(&entry[MANUFACTURER_HEADER_LEN..]);
         }
         rest = after;
     }
