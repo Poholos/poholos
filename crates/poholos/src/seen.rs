@@ -38,11 +38,16 @@
 /// the ring backend) linearly.
 pub const SEEN_CAPACITY: usize = 512;
 
-/// Computes the 64-bit FNV-1a hash of `bytes`.
+/// Computes the 64-bit [FNV-1a] hash of `bytes`.
 ///
-/// Used for packet dedup keys and for deriving
-/// [`WireId`](crate::WireId)s from node names. Stable across platforms
-/// and releases: changing it would break on-air interop.
+/// FNV-1a is a fast, non-cryptographic hash with a tiny, `no_std`-friendly
+/// implementation and good dispersion on the short inputs poholos hashes
+/// (node names, dedup keys); collision *resistance* is a non-goal. See the
+/// [`seen`](crate) module docs for why that trade-off is appropriate here.
+///
+/// Used for packet dedup keys and for deriving [`WireId`](crate::WireId)s
+/// from node names. Stable across platforms and releases: changing it would
+/// break on-air interop.
 ///
 /// # Examples
 /// ```
@@ -51,6 +56,8 @@ pub const SEEN_CAPACITY: usize = 512;
 /// assert_eq!(fnv64(b""), 0xcbf2_9ce4_8422_2325);
 /// assert_ne!(fnv64(b"alice-3f2a"), fnv64(b"bob-9c01"));
 /// ```
+///
+/// [FNV-1a]: https://datatracker.ietf.org/doc/html/draft-eastlake-fnv
 #[must_use]
 pub fn fnv64(bytes: &[u8]) -> u64 {
     // FNV-1a 64-bit offset basis and prime, per the FNV reference spec.
