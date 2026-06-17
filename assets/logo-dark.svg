@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="280" viewBox="0 0 680 280" role="img">
+  <title>Poholos logo — dark variant</title>
+  <desc>Mesh nodes arranged as a Ukrainian trident with 5-point stars on dark navy, and the POHOLOS wordmark</desc>
+  <style>
+    .name { font-family: monospace; font-size: 38px; font-weight: 500; fill: #f0f0ff; letter-spacing: 8px; text-anchor: middle; }
+    .rule { stroke: #2e2e5a; stroke-width: 0.5; }
+    .nb { fill: #4a9fff; } .ng { fill: #ffd700; } .nr { fill: #ff4466; }
+    .ab { stroke: #4a9fff; } .ag { stroke: #ffd700; } .ar { stroke: #ff4466; }
+    .hb { fill: #4a9fff; opacity: 0.15; } .hg { fill: #ffd700; opacity: 0.14; } .hr { fill: #ff4466; opacity: 0.15; }
+  </style>
+
+  <rect width="680" height="280" fill="#0d1f4a"/>
+
+  <circle cx="340" cy="55"  r="16" class="hb"/>
+  <circle cx="262" cy="82"  r="13" class="hb"/>
+  <circle cx="418" cy="82"  r="13" class="hb"/>
+  <circle cx="280" cy="150" r="16" class="hr"/>
+  <circle cx="400" cy="150" r="16" class="hr"/>
+  <circle cx="340" cy="197" r="13" class="hg"/>
+
+  <path d="M334,64 Q305,98 284,144"  fill="none" class="ab" stroke-width="1.8" stroke-linecap="round" opacity="0.85" stroke-dasharray="8 4"/>
+  <path d="M346,64 Q375,98 396,144"  fill="none" class="ab" stroke-width="1.8" stroke-linecap="round" opacity="0.85" stroke-dasharray="8 4"/>
+  <path d="M262,82 Q224,128 280,150" fill="none" class="ab" stroke-width="1.8" stroke-linecap="round" opacity="0.80" stroke-dasharray="8 4"/>
+  <path d="M418,82 Q456,128 400,150" fill="none" class="ab" stroke-width="1.8" stroke-linecap="round" opacity="0.80" stroke-dasharray="8 4"/>
+  <path d="M280,150 Q340,168 400,150" fill="none" class="ar" stroke-width="1.8" stroke-linecap="round" opacity="0.70" stroke-dasharray="8 4"/>
+  <path d="M262,82 Q335,140 340,197" fill="none" class="ag" stroke-width="1.8" stroke-linecap="round" opacity="0.55" stroke-dasharray="8 4"/>
+  <path d="M418,82 Q345,140 340,197" fill="none" class="ag" stroke-width="1.8" stroke-linecap="round" opacity="0.55" stroke-dasharray="8 4"/>
+
+  <circle cx="340" cy="55" r="11" class="nb"/>
+  <polygon points="340.0,47.4 341.8,52.6 347.2,52.7 342.9,55.9 344.5,61.1 340.0,58.0 335.5,61.1 337.1,55.9 332.8,52.7 338.2,52.6" fill="white" opacity="0.92"/>
+
+  <circle cx="262" cy="82" r="8" class="nb"/>
+  <circle cx="262" cy="82" r="3.5" fill="white" opacity="0.85"/>
+  <circle cx="418" cy="82" r="8" class="nb"/>
+  <circle cx="418" cy="82" r="3.5" fill="white" opacity="0.85"/>
+
+  <circle cx="280" cy="150" r="11" class="nr"/>
+  <polygon points="280.0,142.4 281.8,147.6 287.2,147.7 282.9,150.9 284.5,156.1 280.0,153.0 275.5,156.1 277.1,150.9 272.8,147.7 278.2,147.6" fill="white" opacity="0.92"/>
+  <circle cx="400" cy="150" r="11" class="nr"/>
+  <polygon points="400.0,142.4 401.8,147.6 407.2,147.7 402.9,150.9 404.5,156.1 400.0,153.0 395.5,156.1 397.1,150.9 392.8,147.7 398.2,147.6" fill="white" opacity="0.92"/>
+
+  <circle cx="340" cy="197" r="8" class="ng"/>
+  <circle cx="340" cy="197" r="3.5" fill="white" opacity="0.9"/>
+
+  <line x1="180" y1="220" x2="500" y2="220" class="rule"/>
+  <text x="340" y="260" class="name">POHOLOS</text>
+</svg>

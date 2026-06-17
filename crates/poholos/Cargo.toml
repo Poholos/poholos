@@ -2,15 +2,15 @@
 name = "poholos"
 description = "Peer-to-peer Bluetooth mesh messaging protocol."
 readme = "../../README.md"
-version.workspace = true
+version = "0.1.0"   #version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
-# Still incomplete (router / seen-cache / rotation pending); not ready for
-# crates.io. Flip to `true` once the public API is complete.
-publish = false
+keywords = ["bluetooth", "ble", "mesh", "p2p", "no-std"]
+categories = ["network-programming", "embedded", "no-std"]
+publish = true
 
 [features]
 default = ["std"]
