@@ -6,7 +6,7 @@
 //! Poholos (Ukrainian: *поголос* — rumour, hearsay) is a peer-to-peer mesh
 //! chat protocol designed to ride inside Bluetooth Low Energy legacy
 //! advertisements. The universal desktop baseline for those is ~31 bytes of
-//! advertising data, leaving a **22-byte on-air frame** once AD structure
+//! advertising data (AD), leaving a **22-byte on-air frame** once AD structure
 //! overhead is accounted for. Everything in this crate is built around that
 //! budget.
 //!

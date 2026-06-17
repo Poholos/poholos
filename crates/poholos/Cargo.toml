@@ -8,8 +8,8 @@ rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
-keywords = ["bluetooth", "ble", "mesh", "p2p", "no-std"]
-categories = ["network-programming", "embedded", "no-std"]
+keywords.workspace = true
+categories.workspace = true
 publish = true
 
 [features]

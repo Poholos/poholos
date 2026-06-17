@@ -14,6 +14,8 @@ rust-version = "1.95"
 license = "AGPL-3.0-only"
 homepage = "https://poholos.com"
 repository = "https://github.com/poholos/poholos"
+keywords = ["mesh", "bluetooth", "ble", "p2p", "chat"]
+categories = ["network-programming", "embedded", "no-std"]
 
 # Lint configuration per M-STATIC-VERIFICATION (Pragmatic Rust Guidelines).
 # Crates opt in via `[lints] workspace = true`.
