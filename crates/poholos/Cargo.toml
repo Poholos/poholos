@@ -1,15 +1,31 @@
 [package]
 name = "poholos"
 description = "Peer-to-peer Bluetooth mesh messaging protocol."
-readme = "../../README.md"
-version.workspace = true
+readme = "README.md"
+version = "0.1.1"   #version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
-# Skeleton crate — not ready for crates.io yet. Flip to `true` once the
-# implementation and the LICENSE-MIT / LICENSE-APACHE files are in place.
-publish = false
+keywords.workspace = true
+categories.workspace = true
+publish = true
+
+[features]
+default = ["std"]
+# Enables std-backed types: `NodeId`, the LinkedHashSet `SeenCache` backend,
+# and `Backtrace` capture in errors.
+std = ["dep:hashlink"]
+# Serde derives on the wire types (`Packet`, `Payload`, `WireId`, `Frame`).
+serde = ["dep:serde"]
+# Convenience postcard helpers in `poholos::codec` (no_std-friendly).
+postcard = ["serde", "dep:postcard"]
 
 [dependencies]
+hashlink = { version = "0.12", optional = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+postcard = { version = "1", default-features = false, optional = true }
+
+[lints]
+workspace = true

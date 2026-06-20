@@ -1,0 +1,3 @@
+# Proper nouns that `clippy::doc_markdown` would otherwise want backticked.
+# ".." keeps clippy's built-in defaults (macOS, GitHub, ...).
+doc-valid-idents = ["BlueZ", "CoreBluetooth", "WinRT", "SipHash", ".."]
