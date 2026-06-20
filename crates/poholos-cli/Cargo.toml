@@ -1,6 +1,6 @@
 [package]
 name = "poholos-cli"
-description = "Console client for the poholos Bluetooth mesh protocol."
+description = "Console mesh chat over BLE advertising frames (poholos)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,7 +14,48 @@ name = "poholos"
 path = "src/main.rs"
 
 [dependencies]
-poholos = { path = "../poholos" }
+poholos = { path = "../poholos", features = ["std"] }
+anyhow = "1"
+# Local-time receive stamps on delivered messages (test correlation).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+mimalloc = "0.1"
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+futures = "0.3"
+# macOS frames ride in a 128-bit service UUID; this builds/reads them.
+uuid = "1"
+# Pre-bind socket options (SO_REUSEADDR/SO_REUSEPORT) for the UDP
+# transport, so several nodes on one machine can share the port.
+# `all` feature required: socket2 0.6 gates set_reuse_port behind it.
+socket2 = { version = "0.6", features = ["all"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "io-std",
+    "io-util",
+    "net",
+    "sync",
+    "time",
+] }
+
+# Central-role scanning works cross-platform through btleplug.
+btleplug = "0.12"
+
+# Peripheral-role advertising is platform specific (see src/transport/ble/).
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Foundation",
+    "Foundation_Collections",
+    "Storage_Streams",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ble-peripheral-rust = "0.2"
 
 [lints]
 workspace = true
