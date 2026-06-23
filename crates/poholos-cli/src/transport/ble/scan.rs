@@ -97,6 +97,14 @@ async fn scan_loop(
             CentralEvent::ManufacturerDataAdvertisement {
                 manufacturer_data, ..
             } => {
+                // A `None` here is dropped silently and deliberately: the
+                // scanner hears the entire BLE neighbourhood, so almost
+                // every advertisement carries no `COMPANY_ID` of ours and
+                // is simply not poholos traffic — logging or counting it
+                // would be a firehose of noise, not signal. (A frame that
+                // *does* carry our company id but fails to decode is folded
+                // into the same `None`; surfacing that malformed case is a
+                // future enhancement once there is somewhere to report it.)
                 if let Some(frame) = frame_from_manufacturer(&manufacturer_data)
                     && tx.send(frame).await.is_err()
                 {
