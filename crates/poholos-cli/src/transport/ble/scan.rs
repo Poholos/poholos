@@ -28,14 +28,17 @@ use poholos::{COMPANY_ID, Frame};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-/// High nibble marking a poholos frame packed into a 128-bit service
-/// UUID. The low nibble carries the frame length, so this one byte is
-/// both the type tag and the length — costing the 16-byte UUID only a
-/// single byte of frame budget. `0xF` echoes the manufacturer id `0xF10C`.
+/// High nibble marking a poholos frame packed into a 128-bit service UUID.
+/// Used on every platform: a Mac *encodes* frames this way (CoreBluetooth
+/// can't send foreign manufacturer data), and every scanner *decodes* them
+/// to hear Mac senders. The low nibble carries the frame length, so this
+/// one byte is both the type tag and the length — costing the 16-byte UUID
+/// only a single byte of frame budget. `0xF` echoes the company id `0xF10C`.
 const UUID_TAG: u8 = 0xF0;
 
-/// Largest frame the macOS service-UUID channel can carry: a 128-bit
-/// UUID is 16 bytes, of which byte 0 is the tag+length, leaving 15.
+/// Largest frame the service-UUID channel can carry: a 128-bit UUID is 16
+/// bytes, of which byte 0 is the tag+length, leaving 15. This is both the
+/// macOS TX budget and the upper bound the cross-platform decoder enforces.
 pub(crate) const MAX_UUID_FRAME: usize = 15;
 
 /// Smallest valid on-wire frame: 1 flag byte + 2 seq + 4 src (a hearsay
