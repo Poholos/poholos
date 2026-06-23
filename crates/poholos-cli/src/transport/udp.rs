@@ -43,6 +43,12 @@ impl UdpTransport {
     /// two-terminals quick start depends on it. macOS achieves the same
     /// effect with `SO_REUSEADDR` alone (BSD semantics for UDP).
     ///
+    /// Note: this is a single-subnet test transport. The bind is `0.0.0.0`
+    /// (all interfaces) so any NIC's peers are heard, but the limited
+    /// broadcast to `255.255.255.255` egresses only one interface,
+    /// so on a multi-homed host peers on other subnets may be missed.
+    /// Use BLE for the real mesh.
+    ///
     /// # Errors
     /// Fails if the socket cannot be created or bound, or broadcast cannot
     /// be enabled.
