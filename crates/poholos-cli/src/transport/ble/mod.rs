@@ -173,12 +173,16 @@ async fn advertise_loop(mut advertiser: platform::Advertiser, mut rx: mpsc::Rece
         };
 
         if on_air != Some(frame) {
-            match advertiser.set_frame(&frame).await {
-                Ok(()) => on_air = Some(frame),
+            let registered = match advertiser.set_frame(&frame).await {
+                Ok(()) => true,
                 // Radio hiccup: report, burn this dwell idle (avoiding a
                 // tight error loop), and let the next turn retry.
-                Err(e) => eprintln!("! advertise failed: {e:#}"),
-            }
+                Err(e) => {
+                    eprintln!("! advertise failed: {e:#}");
+                    false
+                }
+            };
+            record_on_air(&mut on_air, frame, registered);
         }
 
         // Hold the slot for one dwell, still accepting outgoing frames.
@@ -200,5 +204,55 @@ fn enqueue(rotation: &mut Rotation, out: &Outgoing) {
     match *out {
         Outgoing::Own(frame) => rotation.enqueue_own(frame),
         Outgoing::Relay(frame) => rotation.enqueue_relay(frame),
+    }
+}
+
+/// Updates the belief of which frame is on air after a `set_frame` attempt.
+///
+/// Success records `frame`. Failure clears the belief to `None`, because a
+/// failed registration leaves the radio advertising nothing — platform
+/// advertisers drop the old advertisement *before* installing the new one
+/// (e.g. BlueZ, which grants a single advertising instance). Clearing the
+/// belief is what lets [`advertise_loop`]'s "already on air?" guard retry
+/// the *same* frame next turn instead of assuming it is still up; leaving a
+/// stale belief would strand a node that only ever sends one frame silent.
+fn record_on_air(on_air: &mut Option<Frame>, frame: Frame, registered: bool) {
+    *on_air = registered.then_some(frame);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_frame() -> Frame {
+        // Smallest well-formed frame: 1 flag + 2 seq + 4 src, empty payload.
+        Frame::copy_from(&[0, 0, 0, 0, 0, 0, 0]).expect("valid frame")
+    }
+
+    #[test]
+    fn success_records_frame_on_air() {
+        let frame = test_frame();
+        let mut on_air = None;
+        record_on_air(&mut on_air, frame, true);
+        assert_eq!(on_air, Some(frame));
+    }
+
+    #[test]
+    fn failed_advertise_clears_belief_so_same_frame_retries() {
+        let frame = test_frame();
+        let mut on_air = None;
+
+        // Turn 1: the "already on air?" guard lets the first attempt
+        // through, but the registration fails.
+        assert_ne!(on_air, Some(frame));
+        record_on_air(&mut on_air, frame, false);
+        assert_eq!(on_air, None, "a failed advertise must not leave a stale belief");
+
+        // Turn 2: the same frame is still wanted. Because the belief was
+        // cleared, the guard permits a retry rather than assuming the frame
+        // is already up — which would leave a single-frame sender silent.
+        assert_ne!(on_air, Some(frame), "same frame is retried after a failure");
+        record_on_air(&mut on_air, frame, true);
+        assert_eq!(on_air, Some(frame));
     }
 }

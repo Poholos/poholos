@@ -31,8 +31,8 @@ pub const MAX_FRAME: usize = poholos::MAX_FRAME_LEN;
 #[derive(Debug)]
 pub struct Advertiser {
     adapter: bluer::Adapter,
-    // Dropping the handle unregisters the advertisement, so holding it is
-    // what keeps the frame on air.
+    // Dropping the handle unregisters the advertisement,
+    // so holding it is what keeps the frame on air.
     current: Option<AdvertisementHandle>,
 }
 
@@ -64,8 +64,17 @@ impl Advertiser {
     /// # Errors
     /// Fails if BlueZ rejects the advertisement registration.
     pub async fn set_frame(&mut self, frame: &Frame) -> Result<()> {
-        // Unregister the previous advertisement first; BlueZ instances
-        // are limited and re-registering the same slot is not supported.
+        // Tear the previous advertisement down *before* registering the
+        // new one. Dropping the handle is what unregisters it with BlueZ
+        // (RAII), and BlueZ grants only a single advertising instance, so
+        // the slot has to be free before `advertise()` below — not after.
+        // The trailing `self.current = Some(handle)` would otherwise drop
+        // the old handle only once the new registration completed, leaving
+        // two live at once and risking rejection.
+        //
+        // The cost is that a failed `advertise()` leaves nothing on air
+        // until the next rotation turn retries; `advertise_loop` clears its
+        // on-air belief on error precisely so that retry is not suppressed.
         self.current = None;
 
         let mut manufacturer_data = BTreeMap::new();
