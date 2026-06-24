@@ -8,6 +8,10 @@ it hears. The universal desktop baseline for legacy advertising data is ~31
 bytes, leaving a **22-byte on-air frame** once AD structure overhead is
 accounted for, and everything in this crate is built around that budget.
 
+This crate is the protocol core of the poholos workspace. For the console
+client, the micro:bit firmware, the wire format, and end-to-end usage, see the
+[project README](https://github.com/poholos/poholos#readme).
+
 ## Sans-io
 
 This crate is strictly **sans-io**: it never touches Bluetooth, sockets, clocks,
