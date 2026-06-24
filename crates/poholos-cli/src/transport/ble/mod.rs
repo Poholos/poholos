@@ -209,13 +209,13 @@ fn enqueue(rotation: &mut Rotation, out: &Outgoing) {
 
 /// Updates the belief of which frame is on air after a `set_frame` attempt.
 ///
-/// Success records `frame`. Failure clears the belief to `None`, because a
-/// failed registration leaves the radio advertising nothing — platform
-/// advertisers drop the old advertisement *before* installing the new one
-/// (e.g. BlueZ, which grants a single advertising instance). Clearing the
-/// belief is what lets [`advertise_loop`]'s "already on air?" guard retry
-/// the *same* frame next turn instead of assuming it is still up; leaving a
-/// stale belief would strand a node that only ever sends one frame silent.
+/// Success records `frame`. Failure clears the belief to `None`,
+/// because a failed registration leaves the radio advertising nothing —
+/// platform advertisers drop the old advertisement *before* installing
+/// the new one (e.g. BlueZ, which grants a single advertising instance).
+/// Clearing the belief is what lets [`advertise_loop`]'s "already on air?" guard
+/// retry the *same* frame next turn instead of assuming it is still up; leaving
+/// a stale belief would strand a node that only ever sends one frame silent.
 fn record_on_air(on_air: &mut Option<Frame>, frame: Frame, registered: bool) {
     *on_air = registered.then_some(frame);
 }
