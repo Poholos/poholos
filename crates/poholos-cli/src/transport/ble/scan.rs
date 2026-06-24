@@ -19,7 +19,6 @@
 //! The scanner performs no deduplication; the same frame will be reported
 //! every time the radio hears it, and the router's seen-cache absorbs it.
 
-
 use anyhow::{Context, Result};
 use btleplug::api::{Central as _, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
