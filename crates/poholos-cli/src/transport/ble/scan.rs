@@ -97,7 +97,7 @@ async fn scan_loop(
                 manufacturer_data, ..
             } => {
                 // A `None` here is dropped silently and deliberately: the
-                // scanner hears the entire BLE neighbourhood, so almost
+                // scanner hears the entire BLE neighborhood, so almost
                 // every advertisement carries no `COMPANY_ID` of ours and
                 // is simply not poholos traffic — logging or counting it
                 // would be a firehose of noise, not signal. (A frame that

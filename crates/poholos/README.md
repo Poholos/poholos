@@ -1,7 +1,7 @@
 # poholos
 
 A peer-to-peer mesh chat protocol that rides inside Bluetooth Low Energy
-legacy advertisements. *Poholos* (Ukrainian: *поголос* — rumour, hearsay) floods
+legacy advertisements. *Poholos* (Ukrainian *по́голос*, ˈpo-ho-los — rumor, hearsay) floods
 short messages hop-by-hop across nearby devices with no infrastructure, no
 pairing, and no connections: every node simply broadcasts and re-broadcasts what
 it hears. The universal desktop baseline for legacy advertising data is ~31
