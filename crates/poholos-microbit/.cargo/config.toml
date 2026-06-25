@@ -1,0 +1,17 @@
+# Cross-compilation defaults for the micro:bit v2 (nRF52833, Cortex-M4F).
+# `cargo run` flashes and streams defmt logs through the onboard probe;
+# install the runner with `cargo install probe-rs-tools`.
+
+[build]
+target = "thumbv7em-none-eabihf"
+
+[target.thumbv7em-none-eabihf]
+runner = "probe-rs run --chip nRF52833_xxAA"
+rustflags = [
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tdefmt.x",
+    "-C", "link-arg=--nmagic",
+]
+
+[env]
+DEFMT_LOG = "info"

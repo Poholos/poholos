@@ -18,7 +18,6 @@
 //! explanation instead of truncating. In practice that limits hearsay
 //! typed on a Mac to 8 payload bytes and telegrams to 4.
 
-
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};

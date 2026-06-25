@@ -36,8 +36,8 @@ pub const DEFAULT_TTL: u8 = 16;
 
 /// Maximum TTL representable in the 5-bit wire field.
 ///
-/// Derived from the Option A frame layout, which packs version (2 bits),
-/// the `has_dest` flag (1 bit), and the TTL (5 bits) into byte 0.
+/// Derived from the frame layout, which packs version (2 bits), the
+/// `has_dest` flag (1 bit), and the TTL (5 bits) into byte 0.
 pub const MAX_TTL: u8 = 31;
 
 /// Maximum payload bytes in a hearsay (broadcast) packet.

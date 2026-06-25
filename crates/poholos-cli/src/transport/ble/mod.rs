@@ -28,7 +28,7 @@
 //! foreign manufacturer data: the frame is packed into a 128-bit service
 //! UUID (16 bytes) instead, one byte of which tags and lengths it. Frames
 //! above a platform's budget make `send` fail with an explanation rather
-//! than truncating. 
+//! than truncating.
 
 use anyhow::{Result, bail, ensure};
 use poholos::Frame;
@@ -246,7 +246,10 @@ mod tests {
         // through, but the registration fails.
         assert_ne!(on_air, Some(frame));
         record_on_air(&mut on_air, frame, false);
-        assert_eq!(on_air, None, "a failed advertise must not leave a stale belief");
+        assert_eq!(
+            on_air, None,
+            "a failed advertise must not leave a stale belief"
+        );
 
         // Turn 2: the same frame is still wanted. Because the belief was
         // cleared, the guard permits a retry rather than assuming the frame

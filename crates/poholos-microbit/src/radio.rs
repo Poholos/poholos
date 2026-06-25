@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Ivan Petrouchtchak
+
+//! BLE radio bring-up: MPSL + Nordic SoftDevice Controller + trouble host.
+//!
+//! This replicates the setup in `microbit-bsp`'s `ble.rs` but with one
+//! crucial difference: the controller is built with **scan support**
+//! (`support_scan`), because a poholos node is an observer and a
+//! broadcaster at once. The BSP's builder hardcodes advertising +
+//! peripheral only, which is why we own this layer ourselves.
+//!
+//! [`run`] drives three concerns forever:
+//!
+//! * the trouble host runner, whose scan-report handler decodes poholos
+//!   frames out of manufacturer data and feeds `RX_FRAMES`;
+//! * a continuous passive scan session;
+//! * the advertiser, which time-shares the single advertising slot via
+//!   the shared [`poholos::rotation`] policy, fed from `OUTGOING` — the
+//!   firmware twin of `poholos-cli`'s `advertise_loop`.
+
+use bt_hci::param::LeAdvReportsIter;
+use embassy_futures::select::{Either, select, select3};
+use embassy_nrf::mode::Async;
+use embassy_nrf::peripherals::{
+    PPI_CH17, PPI_CH18, PPI_CH19, PPI_CH20, PPI_CH21, PPI_CH22, PPI_CH23, PPI_CH24, PPI_CH25,
+    PPI_CH26, PPI_CH27, PPI_CH28, PPI_CH29, PPI_CH30, PPI_CH31, RNG, RTC0, TEMP, TIMER0,
+};
+use embassy_nrf::{Peri, bind_interrupts, rng};
+use embassy_time::{Duration, Instant, Timer};
+use nrf_sdc::mpsl::MultiprotocolServiceLayer;
+use nrf_sdc::{self as sdc, mpsl};
+use poholos::rotation::Rotation;
+use poholos::{COMPANY_ID, Frame};
+use static_cell::StaticCell;
+use trouble_host::advertise::{AdStructure, Advertisement, AdvertisementParameters};
+use trouble_host::connection::ScanConfig;
+use trouble_host::prelude::DefaultPacketPool;
+use trouble_host::scan::Scanner;
+use trouble_host::{Address, Host, HostResources};
+
+use crate::{OUTGOING, Outgoing, RX_FRAMES};
+
+/// Memory handed to the SoftDevice Controller: the exact requirement
+/// this adv+scan configuration reported on hardware ("1752 bytes
+/// needed" in the phase-3 boot log).
+const SDC_MEMORY_SIZE: usize = 1752;
+
+/// One rotation dwell, converted to the embassy clock.
+const DWELL: Duration = Duration::from_millis(poholos::rotation::DWELL.as_millis() as u64);
+
+bind_interrupts!(struct Irqs {
+    RNG => rng::InterruptHandler<RNG>;
+    EGU0_SWI0 => mpsl::LowPrioInterruptHandler;
+    CLOCK_POWER => mpsl::ClockInterruptHandler;
+    RADIO => mpsl::HighPrioInterruptHandler;
+    TIMER0 => mpsl::HighPrioInterruptHandler;
+    RTC0 => mpsl::HighPrioInterruptHandler;
+});
+
+/// Low-frequency clock from the internal RC oscillator: the micro:bit
+/// has no 32 kHz crystal.
+const LFCLK_CFG: mpsl::raw::mpsl_clock_lfclk_cfg_t = mpsl::raw::mpsl_clock_lfclk_cfg_t {
+    source: mpsl::raw::MPSL_CLOCK_LF_SRC_RC as u8,
+    rc_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_CTIV as u8,
+    rc_temp_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_TEMP_CTIV as u8,
+    accuracy_ppm: mpsl::raw::MPSL_DEFAULT_CLOCK_ACCURACY_PPM as u16,
+    skip_wait_lfclk_started: mpsl::raw::MPSL_DEFAULT_SKIP_WAIT_LFCLK_STARTED != 0,
+};
+
+/// The radio peripherals the MPSL and the SDC claim for themselves.
+pub struct RadioPeripherals {
+    pub rtc0: Peri<'static, RTC0>,
+    pub timer0: Peri<'static, TIMER0>,
+    pub temp: Peri<'static, TEMP>,
+    pub rng: Peri<'static, RNG>,
+    pub ppi_ch17: Peri<'static, PPI_CH17>,
+    pub ppi_ch18: Peri<'static, PPI_CH18>,
+    pub ppi_ch19: Peri<'static, PPI_CH19>,
+    pub ppi_ch20: Peri<'static, PPI_CH20>,
+    pub ppi_ch21: Peri<'static, PPI_CH21>,
+    pub ppi_ch22: Peri<'static, PPI_CH22>,
+    pub ppi_ch23: Peri<'static, PPI_CH23>,
+    pub ppi_ch24: Peri<'static, PPI_CH24>,
+    pub ppi_ch25: Peri<'static, PPI_CH25>,
+    pub ppi_ch26: Peri<'static, PPI_CH26>,
+    pub ppi_ch27: Peri<'static, PPI_CH27>,
+    pub ppi_ch28: Peri<'static, PPI_CH28>,
+    pub ppi_ch29: Peri<'static, PPI_CH29>,
+    pub ppi_ch30: Peri<'static, PPI_CH30>,
+    pub ppi_ch31: Peri<'static, PPI_CH31>,
+}
+
+/// Brings up the MPSL and builds the SoftDevice Controller with
+/// advertising *and* scanning support.
+///
+/// The returned MPSL reference must be driven by a spawned task calling
+/// `mpsl.run()` before the controller is used.
+pub fn init(
+    p: RadioPeripherals,
+) -> Result<
+    (
+        sdc::SoftdeviceController<'static>,
+        &'static MultiprotocolServiceLayer<'static>,
+    ),
+    sdc::Error,
+> {
+    let mpsl_p =
+        mpsl::Peripherals::new(p.rtc0, p.timer0, p.temp, p.ppi_ch19, p.ppi_ch30, p.ppi_ch31);
+    static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
+    let mpsl = MPSL.init(mpsl::MultiprotocolServiceLayer::new(
+        mpsl_p, Irqs, LFCLK_CFG,
+    )?);
+
+    let sdc_p = sdc::Peripherals::new(
+        p.ppi_ch17, p.ppi_ch18, p.ppi_ch20, p.ppi_ch21, p.ppi_ch22, p.ppi_ch23, p.ppi_ch24,
+        p.ppi_ch25, p.ppi_ch26, p.ppi_ch27, p.ppi_ch28, p.ppi_ch29,
+    );
+    static SDC_RNG: StaticCell<rng::Rng<'static, RNG, Async>> = StaticCell::new();
+    let sdc_rng = SDC_RNG.init(rng::Rng::new(p.rng, Irqs));
+    static SDC_MEM: StaticCell<sdc::Mem<SDC_MEMORY_SIZE>> = StaticCell::new();
+    let sdc_mem = SDC_MEM.init(sdc::Mem::new());
+
+    let sdc = sdc::Builder::new()?
+        .support_adv()?
+        .support_scan()?
+        .build(sdc_p, sdc_rng, mpsl, sdc_mem)?;
+    Ok((sdc, mpsl))
+}
+
+/// Decodes poholos frames out of scan reports and feeds the router.
+///
+/// Called from the host runner's event context, so it must not block:
+/// on overflow the oldest pending frame is shed — the same overload
+/// policy as everywhere else in the stack, and duplicates are routine
+/// on radio anyway.
+struct ScanHandler;
+
+impl trouble_host::prelude::EventHandler for ScanHandler {
+    fn on_adv_reports(&self, mut reports: LeAdvReportsIter<'_>) {
+        while let Some(Ok(report)) = reports.next() {
+            let Some(bytes) = poholos::manufacturer_frame(report.data) else {
+                continue;
+            };
+            let Ok(frame) = Frame::copy_from(bytes) else {
+                continue;
+            };
+            if let Err(err) = RX_FRAMES.try_send(frame) {
+                let embassy_sync::channel::TrySendError::Full(frame) = err;
+                let _ = RX_FRAMES.try_receive();
+                let _ = RX_FRAMES.try_send(frame);
+            }
+        }
+    }
+}
+
+/// Runs the BLE host forever: scanning continuously and rotating the
+/// advertising slot through outgoing own/relay frames.
+pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Address) -> ! {
+    let mut resources: HostResources<DefaultPacketPool, 1, 1> = HostResources::new();
+    let stack = trouble_host::new(controller, &mut resources).set_random_address(address);
+    let Host {
+        mut peripheral,
+        central,
+        mut runner,
+        ..
+    } = stack.build();
+
+    let handler = ScanHandler;
+    let host = async {
+        let result = runner.run_with_handler(&handler).await;
+        defmt::error!("BLE host runner stopped: {}", defmt::Debug2Format(&result));
+    };
+
+    let scan = async {
+        let mut scanner = Scanner::new(central);
+        // Passive scan (we never send scan requests); interval and window
+        // are left at trouble-host's defaults.
+        let config = ScanConfig {
+            active: false,
+            ..Default::default()
+        };
+        let _session = defmt::unwrap!(scanner.scan(&config).await.map_err(|_| ()), "scan start");
+        defmt::info!("scanning for poholos frames");
+        core::future::pending::<()>().await
+    };
+
+    let advertise = async {
+        let mut rotation = Rotation::new();
+        // The frame currently on air and its advertiser handle, held
+        // only for RAII (dropping it stops the broadcast — hence the
+        // underscore: it is written, never read). Consecutive turns
+        // often serve the same frame; re-advertising it would be
+        // pointless churn.
+        let mut on_air: Option<Frame> = None;
+        let mut _handle = None;
+        let params = AdvertisementParameters::default();
+
+        loop {
+            let Some(frame) = rotation.next_frame() else {
+                // Nothing waiting: leave the current advertisement on
+                // air and sleep until new work arrives.
+                enqueue(&mut rotation, OUTGOING.receive().await);
+                continue;
+            };
+
+            if on_air != Some(frame) {
+                // Stop the previous advertisement before starting the
+                // replacement on the single slot.
+                _handle = None;
+                let mut adv_data = [0u8; 31];
+                let len = defmt::unwrap!(
+                    AdStructure::encode_slice(
+                        &[AdStructure::ManufacturerSpecificData {
+                            company_identifier: COMPANY_ID,
+                            payload: frame.as_bytes(),
+                        }],
+                        &mut adv_data,
+                    )
+                    .map_err(|_| ()),
+                    "frame + AD overhead always fits 31 bytes"
+                );
+                match peripheral
+                    .advertise(
+                        &params,
+                        Advertisement::NonconnectableNonscannableUndirected {
+                            adv_data: &adv_data[..len],
+                        },
+                    )
+                    .await
+                {
+                    Ok(adv) => {
+                        _handle = Some(adv);
+                        on_air = Some(frame);
+                    }
+                    // Radio hiccup: the old advertisement was already
+                    // dropped above, so nothing is on air. Clear the belief
+                    // so the next turn re-advertises this same frame instead
+                    // of assuming it is still up; burn this dwell to avoid a
+                    // tight error loop.
+                    Err(e) => {
+                        defmt::warn!("advertise failed: {}", defmt::Debug2Format(&e));
+                        on_air = None;
+                    }
+                }
+            }
+
+            // Hold the slot for one dwell, still accepting outgoing
+            // frames into the rotation.
+            let deadline = Instant::now() + DWELL;
+            loop {
+                match select(Timer::at(deadline), OUTGOING.receive()).await {
+                    Either::First(()) => break,
+                    Either::Second(out) => enqueue(&mut rotation, out),
+                }
+            }
+        }
+    };
+
+    // The scan and advertise arms never complete; only a host runner
+    // failure can get here — and that is fatal for a radio node.
+    let _ = select3(host, scan, advertise).await;
+    defmt::panic!("BLE host stopped");
+}
+
+fn enqueue(rotation: &mut Rotation, out: Outgoing) {
+    match out {
+        Outgoing::Own(frame) => rotation.enqueue_own(frame),
+        Outgoing::Relay(frame) => rotation.enqueue_relay(frame),
+    }
+}

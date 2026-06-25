@@ -19,7 +19,6 @@
 //! The scanner performs no deduplication; the same frame will be reported
 //! every time the radio hears it, and the router's seen-cache absorbs it.
 
-
 use anyhow::{Context, Result};
 use btleplug::api::{Central as _, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
@@ -98,7 +97,7 @@ async fn scan_loop(
                 manufacturer_data, ..
             } => {
                 // A `None` here is dropped silently and deliberately: the
-                // scanner hears the entire BLE neighbourhood, so almost
+                // scanner hears the entire BLE neighborhood, so almost
                 // every advertisement carries no `COMPANY_ID` of ours and
                 // is simply not poholos traffic — logging or counting it
                 // would be a firehose of noise, not signal. (A frame that

@@ -1,0 +1,57 @@
+# cargo-deny policy for poholos.
+#
+# This allow-list contains only permissive licenses. It guards two things:
+#   1. The open `poholos` core, published under MIT OR Apache-2.0, must stay
+#      free of copyleft dependencies — otherwise it could not be permissively
+#      licensed or republished.
+#   2. The AGPL apps (poholos-cli, poholos-microbit) are also offered under a
+#      separate commercial license, so every dependency must be one the
+#      copyright holder can relicense for closed-source use.
+# Any license NOT listed here — notably copyleft (GPL/LGPL/AGPL) or weak
+# copyleft (MPL-2.0) — is reported by `cargo deny check licenses` for
+# deliberate review, since either of those would undermine one of the goals
+# above.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "0BSD",
+    "Unlicense",
+    # Nordic SoftDevice Controller / MPSL binary blobs (firmware only); see
+    # the clarify entries below. Commercial use is permitted on Nordic ICs.
+    "LicenseRef-Nordic-5-Clause",
+]
+confidence-threshold = 0.8
+
+# Some entries above are pre-approved for future use and aren't in the current
+# tree; don't warn about those (keeps `cargo update` from needing config churn).
+unused-allowed-license = "allow"
+
+# Skip first-party crates from the allow-list check. The AGPL apps
+# (publish = false) would otherwise trip it, since AGPL isn't in the permissive
+# list above; the published `poholos` core is MIT/Apache and passes regardless.
+private = { ignore = true }
+
+# The Nordic SoftDevice Controller / MPSL crates ship precompiled binary
+# libraries and declare no `license` field in their manifests. The bundled
+# blobs are governed by the Nordic 5-Clause license (commercial use permitted
+# only on Nordic ICs; no reverse engineering). Pin the resolved expression so
+# the check is explicit instead of relying on a silent "no license" warning.
+[[licenses.clarify]]
+crate = "nrf-sdc-sys"
+expression = "LicenseRef-Nordic-5-Clause"
+license-files = [{ path = "third_party/nordic/nrfxlib/LICENSE", hash = 0x42474f6a }]
+
+[[licenses.clarify]]
+crate = "nrf-mpsl-sys"
+expression = "LicenseRef-Nordic-5-Clause"
+license-files = [{ path = "third_party/nordic/nrfxlib/LICENSE", hash = 0x42474f6a }]

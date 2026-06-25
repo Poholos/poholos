@@ -16,7 +16,6 @@
 //! Replacing the frame means dropping the previous advertisement handle
 //! (which unregisters it) and registering a new one.
 
-
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
