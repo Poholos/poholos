@@ -1,0 +1,18 @@
+[package]
+name = "poholos-morse"
+description = "Morse-code text composer for poholos: dot/dash input to decoded text."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
+
+[dependencies]
+morse-codec = { version = "0.4", default-features = false, features = ["decoder"] }
+
+[lints]
+workspace = true

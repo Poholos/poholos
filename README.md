@@ -18,11 +18,14 @@ the mesh hop by hop until their TTL runs out.
 
 ```
 crates/
-├── poholos          # mesh protocol core: packets, wire codec, seen-cache,
-│                    # router, airtime rotation - no_std-capable, zero I/O
-├── poholos-cli      # tokio console app: chat loop + UDP/BLE transports
-└── poholos-microbit # micro:bit v2 mesh-node firmware (Embassy, own
-                     # workspace; validated end-to-end on hardware)
+├── poholos                  # protocol core: packets, wire codec, seen-cache,
+│                            # router, airtime rotation - no_std, zero I/O
+├── poholos-cli              # tokio console app: chat loop + UDP/BLE transports
+├── poholos-morse            # no_std morse-code composer: dot/dash -> text
+├── poholos-microbit         # micro:bit v2 mesh-node firmware (Embassy; own
+│                            # workspace, validated end-to-end on hardware)
+└── poholos-microbit-morse   # micro:bit v2 morse-input node (Embassy; own
+                             # workspace, validated end-to-end on hardware)
 ```
 
 The core library never touches a socket or a radio. The router is a pure
@@ -122,15 +125,16 @@ cargo test  -p poholos --no-default-features   # no_std ring backend
 # Embedded core (rustup target add thumbv7em-none-eabihf):
 cargo build -p poholos --no-default-features --target thumbv7em-none-eabihf
 
-# micro:bit v2 firmware (own workspace; build from inside the crate so
+# micro:bit v2 firmware (own workspaces; build from inside each crate so
 # its .cargo/config.toml target settings apply):
 (cd crates/poholos-microbit && cargo build --release)
+(cd crates/poholos-microbit-morse && cargo build --release)
 ```
 
 The Linux, Windows, and macOS advertisers, the btleplug scanner (both
-frame shapes), and the micro:bit firmware are all validated on real
-radio, including a two-hop Mac → Windows → micro:bit telegram
-relay across encodings.
+frame shapes), and both micro:bit firmwares (canned and morse-input) are
+all validated on real radio, including a two-hop Mac → Windows →
+micro:bit telegram relay across encodings.
 
 ## micro:bit v2 firmware
 
@@ -167,12 +171,44 @@ cargo run --release                  # flash + stream defmt logs
 cargo run -p poholos-cli -- --id alice-0001
 ```
 
+## micro:bit v2 morse-code node
+
+`crates/poholos-microbit-morse` is a variant firmware whose *input* is morse
+code keyed on the two buttons instead of canned messages — otherwise a full
+mesh node, identical on the radio. It builds on `poholos-morse`, a small
+`no_std`, host-tested decoder that turns dot/dash elements plus pause
+boundaries into text.
+
+Keying:
+
+* Button **A** tap = **dot**, Button **B** tap = **dash**. The first tap
+  begins a message; a pause auto-commits the current letter, a longer pause
+  inserts a word space.
+* **Hold A** = finish & send (broadcast). **Hold B** = clear.
+
+Feedback on the 5×5 matrix (with a speaker sidetone per press):
+
+* each press flashes its **dot/dash** glyph;
+* each completed **letter** is flashed as a character;
+* **✗** — press rejected (the letter is past the 6-element morse maximum:
+  pause to let it commit);
+* **→** sent, **←** cleared.
+
+The decoded text and the running dot/dash pattern also stream to the `defmt`
+log. Build and flash exactly like the canned firmware:
+
+```sh
+cd crates/poholos-microbit-morse
+cargo run --release
+```
+
 ## License
 
 Split-licensed by component:
 
 - **`poholos` core** (`crates/poholos`) — dual-licensed **MIT OR Apache-2.0**,
   at your option.
-- **`poholos-cli` and `poholos-microbit`** — **AGPL-3.0-only**.
+- **Everything else** (`poholos-cli`, `poholos-morse`, `poholos-microbit`,
+  `poholos-microbit-morse`) — **AGPL-3.0-only**.
 
 See [LICENSING.md](LICENSING.md) for details.
