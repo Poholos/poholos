@@ -84,8 +84,8 @@ static DISPLAY_MSGS: Channel<CriticalSectionRawMutex, DisplayMsg, 4> = Channel::
 static GLYPHS: Channel<CriticalSectionRawMutex, Show, 8> = Channel::new();
 /// Pending chimes for telegrams addressed to this node.
 static CHIMES: Channel<CriticalSectionRawMutex, (), 2> = Channel::new();
-/// Sidetone beeps, one per dot/dash entered.
-static SIDETONE: Channel<CriticalSectionRawMutex, (), 8> = Channel::new();
+/// Sidetone beeps, one per dot/dash entered (the symbol picks the length).
+static SIDETONE: Channel<CriticalSectionRawMutex, Symbol, 8> = Channel::new();
 
 /// Press longer than this on either button is a Send (A) or Clear (B),
 /// not a dot/dash symbol.
@@ -111,8 +111,9 @@ const CHIME: [Note; 2] = [
     Note(Pitch::Named(NamedPitch::E5), 120),
     Note(Pitch::Named(NamedPitch::A5), 180),
 ];
-/// A short blip played as each dot/dash is entered.
-const SIDETONE_NOTE: Note = Note(Pitch::Named(NamedPitch::A5), 30);
+/// Sidetone blips per entered element — dash is 3× the dot, as in morse.
+const DOT_NOTE: Note = Note(Pitch::Named(NamedPitch::A5), 40);
+const DASH_NOTE: Note = Note(Pitch::Named(NamedPitch::A5), 120);
 
 /// Dot glyph: a small centered diamond.
 const DOT_GLYPH: Glyph<5, 5> = Glyph::new([
@@ -297,11 +298,16 @@ async fn compose_task() {
                     Either::First(InputEvent::Dash) => (Symbol::Dash, '-', Show::Dash),
                     _ => (Symbol::Dot, '.', Show::Dot),
                 };
-                // A letter longer than the morse maximum is invalid: the
-                // previous letter never got its pause, so this one merged
-                // with it. Flag it (the matrix shows a cross-mark) instead of
-                // silently dropping the symbol — morse-codec drops it too.
-                if elements.len() >= MAX_MORSE {
+                // Rejected presses flash a cross-mark and stay silent (no
+                // beep, no dot/dash) so it's clear the input was ignored:
+                if composer.is_full() {
+                    // Message at the payload cap — send or clear to continue.
+                    defmt::warn!("morse: message full — send or clear");
+                    let _ = GLYPHS.try_send(Show::Error);
+                } else if elements.len() >= MAX_MORSE {
+                    // Letter past the morse maximum: the previous letter never
+                    // got its pause, so this one merged with it (morse-codec
+                    // drops the extra symbol too).
                     defmt::warn!("morse: letter too long — pause to commit");
                     let _ = GLYPHS.try_send(Show::Error);
                 } else {
@@ -309,9 +315,9 @@ async fn compose_task() {
                     let _ = elements.push(element);
                     defmt::info!("dits {=str}", elements.as_str());
                     let _ = GLYPHS.try_send(glyph);
-                    let _ = SIDETONE.try_send(());
+                    let _ = SIDETONE.try_send(symbol);
+                    pending = Some((Phase::Letter, Instant::now() + LETTER_GAP));
                 }
-                pending = Some((Phase::Letter, Instant::now() + LETTER_GAP));
             }
             Either::First(InputEvent::Send) => {
                 commit_letter(&mut composer, &mut elements);
@@ -477,7 +483,13 @@ async fn speaker_task(mut speaker: PwmSpeaker<'static, PWM0>) {
                     speaker.play(note).await;
                 }
             }
-            Either::Second(()) => speaker.play(&SIDETONE_NOTE).await,
+            Either::Second(symbol) => {
+                let note = match symbol {
+                    Symbol::Dot => &DOT_NOTE,
+                    Symbol::Dash => &DASH_NOTE,
+                };
+                speaker.play(note).await;
+            }
         }
     }
 }

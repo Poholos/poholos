@@ -124,8 +124,13 @@ impl<const MAX: usize> Composer<MAX> {
         self.space_pending = false;
     }
 
-    /// `true` once `MAX` characters have been committed.
-    fn is_full(&self) -> bool {
+    /// `true` once `MAX` characters have been committed — further [`symbol`]
+    /// input is ignored until [`clear`].
+    ///
+    /// [`symbol`]: Self::symbol
+    /// [`clear`]: Self::clear
+    #[must_use]
+    pub fn is_full(&self) -> bool {
         self.decoder.message.len() >= MAX
     }
 }
@@ -213,6 +218,7 @@ mod tests {
         letter(&mut c, &[Dot, Dot, Dot]); // S
         letter(&mut c, &[Dash, Dash, Dash]); // O
         letter(&mut c, &[Dot, Dot, Dot]); // S -> "SOS", now full
+        assert!(c.is_full());
         letter(&mut c, &[Dot, Dash]); // A -> must be refused
         assert_eq!(c.message(), "SOS");
         assert_eq!(c.message().len(), 3);
