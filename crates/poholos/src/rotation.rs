@@ -33,10 +33,13 @@
 //! embedded targets — and is expected to call [`Rotation::next_frame`]
 //! once per [`DWELL`], keeping the previous frame on air when it returns
 //! `None`.
+//!
+//! [`RotationN`] is generic over the frame capacity `CAP`; the alias
+//! [`Rotation`] fixes it to [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN).
 
 use core::time::Duration;
 
-use crate::wire::Frame;
+use crate::wire::{FrameN, MAX_FRAME_LEN};
 
 /// How long each frame holds the advertising slot per turn.
 ///
@@ -61,7 +64,11 @@ pub const OWN_DWELLS: u32 = 20;
 /// `RELAY_QUEUE` × [`DWELL`] = 4 s per hop while still absorbing bursts.
 pub const RELAY_QUEUE: usize = 8;
 
-/// Pure scheduler deciding which frame holds the advertising slot next.
+/// Pure scheduler deciding which frame holds the advertising slot next,
+/// generic over the frame capacity `CAP`.
+///
+/// Most code uses the [`Rotation`] alias (`CAP` =
+/// [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN)).
 ///
 /// # Examples
 /// ```
@@ -82,20 +89,24 @@ pub const RELAY_QUEUE: usize = 8;
 /// # Ok::<(), poholos::PacketError>(())
 /// ```
 #[derive(Debug)]
-pub struct Rotation {
-    own: Option<Own>,
-    relays: RelayRing,
+pub struct RotationN<const CAP: usize> {
+    own: Option<Own<CAP>>,
+    relays: RelayRing<CAP>,
     /// Whether the previous turn served the own frame (alternation state).
     last_was_own: bool,
 }
 
+/// An airtime rotation over the legacy 22-byte frame: [`RotationN`] with
+/// `CAP` = [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN).
+pub type Rotation = RotationN<MAX_FRAME_LEN>;
+
 #[derive(Debug)]
-struct Own {
-    frame: Frame,
+struct Own<const CAP: usize> {
+    frame: FrameN<CAP>,
     dwells_left: u32,
 }
 
-impl Rotation {
+impl<const CAP: usize> RotationN<CAP> {
     /// Creates an empty rotation.
     #[must_use]
     pub fn new() -> Self {
@@ -108,7 +119,7 @@ impl Rotation {
 
     /// Enqueues the local user's message, superseding any previous one
     /// and resetting its airtime budget to [`OWN_DWELLS`].
-    pub fn enqueue_own(&mut self, frame: Frame) {
+    pub fn enqueue_own(&mut self, frame: FrameN<CAP>) {
         self.own = Some(Own {
             frame,
             dwells_left: OWN_DWELLS,
@@ -119,7 +130,7 @@ impl Rotation {
     ///
     /// When [`RELAY_QUEUE`] relays are already waiting, the oldest is
     /// dropped to make room.
-    pub fn enqueue_relay(&mut self, frame: Frame) {
+    pub fn enqueue_relay(&mut self, frame: FrameN<CAP>) {
         self.relays.push_back(frame);
     }
 
@@ -127,7 +138,7 @@ impl Rotation {
     ///
     /// `None` means nothing is waiting; the driver may leave whatever is
     /// currently on air and sleep until new work arrives.
-    pub fn next_frame(&mut self) -> Option<Frame> {
+    pub fn next_frame(&mut self) -> Option<FrameN<CAP>> {
         let relay_turn = !self.relays.is_empty() && (self.last_was_own || self.own.is_none());
         if relay_turn {
             self.last_was_own = false;
@@ -144,7 +155,7 @@ impl Rotation {
     }
 }
 
-impl Default for Rotation {
+impl<const CAP: usize> Default for RotationN<CAP> {
     fn default() -> Self {
         Self::new()
     }
@@ -154,17 +165,17 @@ impl Default for Rotation {
 /// scheduler works identically on embedded targets. Pushing onto a full
 /// ring sheds the oldest entry.
 #[derive(Debug)]
-struct RelayRing {
-    slots: [Frame; RELAY_QUEUE],
+struct RelayRing<const CAP: usize> {
+    slots: [FrameN<CAP>; RELAY_QUEUE],
     /// Physical index of the oldest pending relay.
     head: usize,
     len: usize,
 }
 
-impl RelayRing {
+impl<const CAP: usize> RelayRing<CAP> {
     fn new() -> Self {
         Self {
-            slots: [Frame::EMPTY; RELAY_QUEUE],
+            slots: [FrameN::<CAP>::EMPTY; RELAY_QUEUE],
             head: 0,
             len: 0,
         }
@@ -174,7 +185,7 @@ impl RelayRing {
         self.len == 0
     }
 
-    fn push_back(&mut self, frame: Frame) {
+    fn push_back(&mut self, frame: FrameN<CAP>) {
         if self.len == RELAY_QUEUE {
             // Shed the oldest: under overload its information is the
             // most likely to have already been relayed by neighbors.
@@ -185,7 +196,7 @@ impl RelayRing {
         self.len += 1;
     }
 
-    fn pop_front(&mut self) -> Option<Frame> {
+    fn pop_front(&mut self) -> Option<FrameN<CAP>> {
         if self.len == 0 {
             return None;
         }
@@ -199,6 +210,7 @@ impl RelayRing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::Frame;
 
     fn frame(tag: u8) -> Frame {
         Frame::copy_from(&[tag]).unwrap()

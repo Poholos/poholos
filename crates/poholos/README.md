@@ -34,6 +34,16 @@ I/O lives in the application layer (see the `poholos-cli` crate).
   repeating broadcast slot (BLE advertising), shared by the desktop CLI and
   embedded targets.
 
+### Frame capacity
+
+`Packet`, `Frame`, `Payload`, `RouteAction`, and `Rotation` are type aliases
+over capacity-generic types — `PacketN<CAP>`, `FrameN<CAP>`, and friends — fixed
+to `MAX_FRAME_LEN` (22), the BLE-legacy budget. `encode`/`decode` and
+`Router::originate`/`ingest` are likewise generic over `CAP`, so the same engine
+can carry larger frames on transports with more room (e.g. ~200-byte payloads
+over BLE 5 extended advertising) without duplicating the protocol logic. Reach
+for the aliases unless you specifically need a non-22-byte capacity.
+
 ## Duplicate suppression
 
 Flood routing re-broadcasts every packet, so each node remembers what it has
@@ -76,7 +86,8 @@ match b.ingest(frame.as_bytes())? {
 - `std` *(default)* — enables `NodeId`, a `LinkedHashSet`-backed `SeenCache`, and
   backtrace capture in errors. Without it the crate is `no_std` and
   allocation-free.
-- `serde` — serde derives on the wire types.
+- `serde` — `Serialize`/`Deserialize` impls on the wire types (hand-written, as
+  serde lacks const-generic array support).
 - `postcard` — convenience codec in `poholos::codec`.
 
 ## License

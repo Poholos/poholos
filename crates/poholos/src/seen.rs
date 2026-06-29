@@ -60,11 +60,21 @@ pub const SEEN_CAPACITY: usize = 512;
 /// [FNV-1a]: https://datatracker.ietf.org/doc/html/draft-eastlake-fnv
 #[must_use]
 pub fn fnv64(bytes: &[u8]) -> u64 {
-    // FNV-1a 64-bit offset basis and prime, per the FNV reference spec.
-    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    fnv64_update(FNV_OFFSET_BASIS, bytes)
+}
 
-    let mut hash = OFFSET_BASIS;
+/// FNV-1a 64-bit offset basis, per the FNV reference spec.
+pub(crate) const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+
+/// Folds `bytes` into a running FNV-1a hash and returns the new state.
+///
+/// FNV-1a is a streaming hash, so folding fields one at a time yields the
+/// identical result to hashing their concatenation — which lets
+/// [`dedup_key`](crate::Packet::dedup_key) hash a packet's fields without a
+/// scratch buffer whose size would otherwise depend on a const generic.
+pub(crate) fn fnv64_update(mut hash: u64, bytes: &[u8]) -> u64 {
+    // FNV-1a 64-bit prime, per the FNV reference spec.
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
     for &b in bytes {
         hash ^= u64::from(b);
         hash = hash.wrapping_mul(PRIME);

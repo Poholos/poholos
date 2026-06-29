@@ -50,4 +50,34 @@ mod tests {
         let used = super::to_postcard_slice(&p, &mut buf).unwrap();
         assert_eq!(super::from_postcard(used).unwrap(), p);
     }
+
+    /// The hand-written `PayloadN`/`FrameN` serde impls (serde has no
+    /// const-generic array impls) at a non-default capacity, including the
+    /// byte-visitor's empty and capacity-max edge cases.
+    #[cfg(feature = "postcard")]
+    #[test]
+    fn postcard_round_trips_extended_capacity() {
+        use crate::{FrameN, PacketN, encode};
+
+        let payload = [0xA5u8; 200];
+        let p = PacketN::<211>::hearsay(WireId::new(1), 7, &payload).unwrap();
+        let mut buf = [0u8; 256];
+        let used = postcard::to_slice(&p, &mut buf).unwrap();
+        assert_eq!(postcard::from_bytes::<PacketN<211>>(used).unwrap(), p);
+
+        // Empty and full (211 - HEADER_LEN_HEARSAY = 204) hearsay payloads.
+        for n in [0usize, 204] {
+            let pl = [0x33u8; 204];
+            let pe = PacketN::<211>::hearsay(WireId::new(2), 1, &pl[..n]).unwrap();
+            let mut b = [0u8; 256];
+            let u = postcard::to_slice(&pe, &mut b).unwrap();
+            assert_eq!(postcard::from_bytes::<PacketN<211>>(u).unwrap(), pe);
+        }
+
+        // The frame's serde impl too.
+        let f = encode(&p);
+        let mut fb = [0u8; 256];
+        let fu = postcard::to_slice(&f, &mut fb).unwrap();
+        assert_eq!(postcard::from_bytes::<FrameN<211>>(fu).unwrap(), f);
+    }
 }
