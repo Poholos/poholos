@@ -83,7 +83,20 @@ rest        : payload - ≤ 15 bytes hearsay, ≤ 11 bytes telegram
   excluded so the same packet at different hop counts dedups correctly.
 * Manufacturer-data company id `0xF10C` (above the assigned range; BlueZ
   silently drops `0xFFFF`).
-* Oversized messages are rejected at the prompt, not fragmented (MVP).
+* Messages above the protocol maximum (200-byte payload) are rejected at
+  the prompt, not fragmented; a frame a given transport cannot physically
+  carry fails that send with a platform-specific message.
+
+### Wire version 1 (extended advertising)
+
+Frames past the 22-byte legacy budget are tagged **wire version 1** and
+carry up to a 200-byte payload over BLE 5 extended advertising. The header
+layout is identical — only the permitted length differs — and `encode`
+picks the version by size: short messages stay version 0 (heard by every
+node, legacy included) and only long ones become version 1 (heard by
+extended-scan-capable nodes). Today Windows *sends* version 1 (capped by
+the adapter, ~156 bytes in testing); every platform *receives* it, and the
+UDP test transport carries it in full.
 
 ## Library features
 
@@ -103,16 +116,23 @@ These three platforms were validated on real radio.
 | OS        | Scan | Advertise | Send budget |
 |-----------|------|-----------|-----------------|
 | Linux     | btleplug | BlueZ manufacturer data (`bluer`, `Type::Peripheral`) | 22 bytes |
-| Windows 11| btleplug | `BluetoothLEAdvertisementPublisher` manufacturer data | 22 bytes |
+| Windows 11| btleplug | `BluetoothLEAdvertisementPublisher` manufacturer data | 22 legacy / ~156 extended |
 | macOS     | btleplug | CoreBluetooth **128-bit service UUID** (1-byte tag+len) | **15 bytes** |
 
 Windows cannot act as a GATT peripheral (HRESULT failure) — irrelevant
 here, since poholos only broadcasts. macOS can *hear* full 22-byte frames
 but can only *send* what fits a single 128-bit service UUID: 15 raw bytes
 (one byte tags and lengths the frame), so hearsay typed on a Mac is capped
-at 8 payload bytes and telegrams at 4. Extended advertising would lift
-this between capable nodes and is a planned post-MVP optimization
-(requires BT 5.0+ hardware).
+at 8 payload bytes and telegrams at 4.
+
+Windows additionally **sends and receives** wire-version-1 frames via BLE 5
+extended advertising (TX capped ~156 bytes by the test adapter; RX handles
+the full ~200). Receiving version 1 elsewhere needs BLE 5 hardware and an
+extended-scan backend — validated on Windows (btleplug) and the micro:bit,
+not yet on Linux (the test box is BLE 4.2-only) or macOS. Linux and macOS
+remain version-0 senders. Short messages stay version 0, so the mesh stays
+fully connected regardless. Per-adapter TX-cap detection and micro:bit
+extended advertising are the remaining pieces.
 
 ## Verifying a fresh checkout
 

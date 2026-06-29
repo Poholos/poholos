@@ -5,7 +5,8 @@
 
 use anyhow::Result;
 use poholos::{
-    Frame, MAX_PAYLOAD_HEARSAY, MAX_PAYLOAD_TELEGRAM, NodeId, Packet, RouteAction, Router, WireId,
+    ExtFrame, ExtPacket, ExtRouteAction, MAX_EXT_PAYLOAD_HEARSAY, MAX_EXT_PAYLOAD_TELEGRAM, NodeId,
+    Router, WireId,
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -57,19 +58,19 @@ pub async fn run(node: NodeId, mut transport: Transport) -> Result<()> {
                     break;
                 };
                 match router.ingest(frame.as_bytes()) {
-                    Ok(RouteAction::Deliver(p)) => print_delivery(&p, router.local()),
-                    Ok(RouteAction::DeliverAndForward(p, relay)) => {
+                    Ok(ExtRouteAction::Deliver(p)) => print_delivery(&p, router.local()),
+                    Ok(ExtRouteAction::DeliverAndForward(p, relay)) => {
                         print_delivery(&p, router.local());
                         relay_frame(&mut transport, &relay).await;
                     }
-                    Ok(RouteAction::Forward(relay)) => {
+                    Ok(ExtRouteAction::Forward(relay)) => {
                         relay_frame(&mut transport, &relay).await;
                     }
                     // Routine radio noise, stay quiet: duplicates, own
                     // echoes, expired telegrams (Ignore), and foreign or
                     // corrupt advertisements that slipped through
                     // transport filtering (Err).
-                    Ok(RouteAction::Ignore(_)) | Err(_) => {}
+                    Ok(ExtRouteAction::Ignore(_)) | Err(_) => {}
                 }
             }
         }
@@ -84,14 +85,19 @@ pub async fn run(node: NodeId, mut transport: Transport) -> Result<()> {
 /// The transport may skip frames it cannot carry (a Mac hearing a full
 /// 22-byte frame it can never re-advertise) - that is routine capability
 /// mismatch, handled silently inside `send_relay`, not an error here.
-async fn relay_frame(transport: &mut Transport, relay: &Frame) {
+async fn relay_frame(transport: &mut Transport, relay: &ExtFrame) {
     if let Err(e) = transport.send_relay(relay).await {
         eprintln!("! relay failed: {e:#}");
     }
 }
 
 /// Parses a typed line into an outgoing packet, advancing `seq`.
-fn parse_outgoing(seq: &mut u16, src: WireId, line: &str) -> Result<Packet, String> {
+///
+/// Packets use the extended ([`ExtPacket`]) capacity so the whole CLI runs
+/// at one frame size, but the payload caps enforced here remain the legacy
+/// v0 limits — a typed message therefore always encodes to a wire-version-0
+/// frame, which every transport can carry.
+fn parse_outgoing(seq: &mut u16, src: WireId, line: &str) -> Result<ExtPacket, String> {
     let next_seq = *seq;
 
     let packet = if let Some(rest) = line.strip_prefix('@') {
@@ -102,24 +108,24 @@ fn parse_outgoing(seq: &mut u16, src: WireId, line: &str) -> Result<Packet, Stri
         if message.is_empty() {
             return Err("unicast syntax: @node-xxxx message".to_owned());
         }
-        if message.len() > MAX_PAYLOAD_TELEGRAM {
+        if message.len() > MAX_EXT_PAYLOAD_TELEGRAM {
             return Err(format!(
-                "message is {} bytes; telegrams carry at most {MAX_PAYLOAD_TELEGRAM} \
-                 bytes in this MVP — send several shorter ones",
+                "message is {} bytes; telegrams carry at most {MAX_EXT_PAYLOAD_TELEGRAM} \
+                 bytes in one frame — send several shorter ones",
                 message.len()
             ));
         }
         let dest = WireId::of_name(dest_name);
-        Packet::telegram(src, dest, next_seq, message.as_bytes())
+        ExtPacket::telegram(src, dest, next_seq, message.as_bytes())
     } else {
-        if line.len() > MAX_PAYLOAD_HEARSAY {
+        if line.len() > MAX_EXT_PAYLOAD_HEARSAY {
             return Err(format!(
-                "message is {} bytes; broadcasts carry at most {MAX_PAYLOAD_HEARSAY} \
-                 bytes in this MVP — send several shorter ones",
+                "message is {} bytes; broadcasts carry at most {MAX_EXT_PAYLOAD_HEARSAY} \
+                 bytes in one frame — send several shorter ones",
                 line.len()
             ));
         }
-        Packet::hearsay(src, next_seq, line.as_bytes())
+        ExtPacket::hearsay(src, next_seq, line.as_bytes())
     }
     .map_err(|e| e.to_string())?;
 
@@ -127,7 +133,7 @@ fn parse_outgoing(seq: &mut u16, src: WireId, line: &str) -> Result<Packet, Stri
     Ok(packet)
 }
 
-fn print_delivery(packet: &Packet, local: WireId) {
+fn print_delivery(packet: &ExtPacket, local: WireId) {
     let text = String::from_utf8_lossy(packet.payload());
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
     // A telegram for another node never reaches print_delivery (the
@@ -169,12 +175,15 @@ mod tests {
     fn overlong_messages_are_rejected_with_hint() {
         let mut seq = 0;
         let src = WireId::new(1);
-        let err = parse_outgoing(&mut seq, src, "sixteen bytes!!!").unwrap_err();
-        assert!(err.contains("15"));
+
+        let long = "x".repeat(MAX_EXT_PAYLOAD_HEARSAY + 1);
+        let err = parse_outgoing(&mut seq, src, &long).unwrap_err();
+        assert!(err.contains(&MAX_EXT_PAYLOAD_HEARSAY.to_string()));
         assert_eq!(seq, 0, "seq not consumed on rejection");
 
-        let err = parse_outgoing(&mut seq, src, "@bob-9c01 twelve bytes!").unwrap_err();
-        assert!(err.contains("11"));
+        let long_telegram = format!("@bob-9c01 {}", "y".repeat(MAX_EXT_PAYLOAD_TELEGRAM + 1));
+        let err = parse_outgoing(&mut seq, src, &long_telegram).unwrap_err();
+        assert!(err.contains(&MAX_EXT_PAYLOAD_TELEGRAM.to_string()));
     }
 
     #[test]

@@ -33,7 +33,7 @@ use crate::error::WireError;
 use crate::node_id::WireId;
 use crate::packet::PacketN;
 use crate::seen::SeenCache;
-use crate::wire::{self, FrameN, MAX_FRAME_LEN};
+use crate::wire::{self, FrameN, MAX_EXT_FRAME_LEN, MAX_FRAME_LEN};
 
 /// What a node should do with a frame it just received, generic over the
 /// frame capacity `CAP`.
@@ -57,6 +57,10 @@ pub enum RouteActionN<const CAP: usize> {
 /// A routing decision over the legacy 22-byte frame: [`RouteActionN`] with
 /// `CAP` = [`MAX_FRAME_LEN`].
 pub type RouteAction = RouteActionN<MAX_FRAME_LEN>;
+
+/// A routing decision over the extended (wire version 1) frame:
+/// [`RouteActionN`] with `CAP` = [`MAX_EXT_FRAME_LEN`].
+pub type ExtRouteAction = RouteActionN<MAX_EXT_FRAME_LEN>;
 
 /// Why a received frame produced no deliver or forward action.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

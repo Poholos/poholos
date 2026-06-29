@@ -24,7 +24,7 @@
 //!   transport's.
 
 use anyhow::Result;
-use poholos::Frame;
+use poholos::ExtFrame;
 
 mod ble;
 mod udp;
@@ -67,7 +67,7 @@ impl Transport {
     /// # Errors
     /// Fails on socket errors (UDP) or when the frame exceeds the
     /// platform TX budget (BLE on macOS: 16 bytes).
-    pub async fn send_own(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn send_own(&mut self, frame: &ExtFrame) -> Result<()> {
         match self {
             Self::Udp(t) => t.send(frame).await,
             Self::Ble(t) => t.send_own(frame).await,
@@ -83,7 +83,7 @@ impl Transport {
     ///
     /// # Errors
     /// Fails on socket errors (UDP) or if the advertiser task died (BLE).
-    pub async fn send_relay(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn send_relay(&mut self, frame: &ExtFrame) -> Result<()> {
         match self {
             Self::Udp(t) => t.send(frame).await,
             Self::Ble(t) => t.send_relay(frame).await,
@@ -94,7 +94,7 @@ impl Transport {
     ///
     /// Cancel-safe: backed by an `mpsc` receiver in both transports, so it
     /// can be used directly inside `tokio::select!`.
-    pub async fn recv(&mut self) -> Option<Frame> {
+    pub async fn recv(&mut self) -> Option<ExtFrame> {
         match self {
             Self::Udp(t) => t.recv().await,
             Self::Ble(t) => t.recv().await,

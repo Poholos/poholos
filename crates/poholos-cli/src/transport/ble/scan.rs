@@ -23,7 +23,7 @@ use anyhow::{Context, Result};
 use btleplug::api::{Central as _, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager};
 use futures::StreamExt as _;
-use poholos::{COMPANY_ID, Frame};
+use poholos::{COMPANY_ID, ExtFrame};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -41,7 +41,7 @@ const UUID_TAG: u8 = 0xF0;
 pub(crate) const MAX_UUID_FRAME: usize = 15;
 
 /// Smallest valid on-wire frame: 1 flag byte + 2 seq + 4 src (a hearsay
-/// with an empty payload); telegrams are longer. [`Frame::copy_from`] is
+/// with an empty payload); telegrams are longer. [`ExtFrame::copy_from`] is
 /// only a length-bounded container and does not enforce this, so the
 /// UUID decoder must, otherwise a foreign UUID whose tag nibble happens
 /// to be `0xF` would slip a 1–6 byte "frame" through.
@@ -51,7 +51,7 @@ const MIN_FRAME: usize = 7;
 ///
 /// # Errors
 /// Fails if no adapter is found or the scan cannot be started.
-pub async fn spawn(tx: mpsc::Sender<Frame>) -> Result<()> {
+pub async fn spawn(tx: mpsc::Sender<ExtFrame>) -> Result<()> {
     let manager = Manager::new().await.context("creating BLE manager")?;
     let adapter = manager
         .adapters()
@@ -88,7 +88,7 @@ pub async fn spawn(tx: mpsc::Sender<Frame>) -> Result<()> {
 async fn scan_loop(
     adapter: Adapter,
     mut events: std::pin::Pin<Box<dyn futures::Stream<Item = CentralEvent> + Send>>,
-    tx: mpsc::Sender<Frame>,
+    tx: mpsc::Sender<ExtFrame>,
 ) {
     while let Some(event) = events.next().await {
         match event {
@@ -148,8 +148,8 @@ async fn scan_loop(
 }
 
 /// Pulls a poholos frame out of a manufacturer-data map keyed by company id.
-fn frame_from_manufacturer(data: &std::collections::HashMap<u16, Vec<u8>>) -> Option<Frame> {
-    Frame::copy_from(data.get(&COMPANY_ID)?).ok()
+fn frame_from_manufacturer(data: &std::collections::HashMap<u16, Vec<u8>>) -> Option<ExtFrame> {
+    ExtFrame::copy_from(data.get(&COMPANY_ID)?).ok()
 }
 
 /// Packs a frame into a 128-bit service UUID: byte 0 = `0xF0 | len`,
@@ -168,7 +168,7 @@ fn frame_from_manufacturer(data: &std::collections::HashMap<u16, Vec<u8>>) -> Op
     clippy::cast_possible_truncation,
     reason = "len <= MAX_UUID_FRAME (15) fits a nibble, by the budget check + assert"
 )]
-pub(crate) fn frame_to_service_uuid(frame: &Frame) -> Uuid {
+pub(crate) fn frame_to_service_uuid(frame: &ExtFrame) -> Uuid {
     let bytes = frame.as_bytes();
     let len = bytes.len();
     debug_assert!(
@@ -186,7 +186,7 @@ pub(crate) fn frame_to_service_uuid(frame: &Frame) -> Uuid {
 /// Foreign UUIDs (the Bluetooth base pattern, other apps' services) fail
 /// the high-nibble tag check or the frame structural check and return
 /// `None`.
-fn frame_from_service_uuid(uuid: &Uuid) -> Option<Frame> {
+fn frame_from_service_uuid(uuid: &Uuid) -> Option<ExtFrame> {
     let raw = uuid.as_bytes();
     if raw[0] & 0xF0 != UUID_TAG {
         return None;
@@ -195,7 +195,7 @@ fn frame_from_service_uuid(uuid: &Uuid) -> Option<Frame> {
     if !(MIN_FRAME..=MAX_UUID_FRAME).contains(&len) {
         return None;
     }
-    Frame::copy_from(&raw[1..=len]).ok()
+    ExtFrame::copy_from(&raw[1..=len]).ok()
 }
 
 #[cfg(test)]
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn service_uuid_roundtrip_decodes_to_original_frame() {
         let raw = [0x10, 0x00, 0x2A, 0xDE, 0xAD, 0xBE, 0xEF, b'h', b'i'];
-        let frame = Frame::copy_from(&raw).expect("valid frame");
+        let frame = ExtFrame::copy_from(&raw).expect("valid frame");
         let uuid = frame_to_service_uuid(&frame);
         // Tag byte = 0xF0 | length (9 here).
         assert_eq!(uuid.as_bytes()[0], 0xF0 | 9);

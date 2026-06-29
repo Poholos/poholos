@@ -39,7 +39,7 @@
 
 use core::time::Duration;
 
-use crate::wire::{FrameN, MAX_FRAME_LEN};
+use crate::wire::{FrameN, MAX_EXT_FRAME_LEN, MAX_FRAME_LEN};
 
 /// How long each frame holds the advertising slot per turn.
 ///
@@ -99,6 +99,10 @@ pub struct RotationN<const CAP: usize> {
 /// An airtime rotation over the legacy 22-byte frame: [`RotationN`] with
 /// `CAP` = [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN).
 pub type Rotation = RotationN<MAX_FRAME_LEN>;
+
+/// An airtime rotation over the extended (wire version 1) frame:
+/// [`RotationN`] with `CAP` = [`MAX_EXT_FRAME_LEN`](crate::MAX_EXT_FRAME_LEN).
+pub type ExtRotation = RotationN<MAX_EXT_FRAME_LEN>;
 
 #[derive(Debug)]
 struct Own<const CAP: usize> {

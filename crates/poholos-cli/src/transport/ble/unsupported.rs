@@ -8,7 +8,7 @@
 //! The UDP transport remains fully functional.
 
 use anyhow::{Result, bail};
-use poholos::Frame;
+use poholos::ExtFrame;
 
 /// No BLE here, so no frame can go on air; the value is never read in
 /// practice because the advertiser cannot be constructed.
@@ -31,7 +31,7 @@ impl Advertiser {
     }
 
     /// Unreachable; `Self` cannot be constructed.
-    pub async fn set_frame(&mut self, _frame: &Frame) -> Result<()> {
+    pub async fn set_frame(&mut self, _frame: &ExtFrame) -> Result<()> {
         match self.never {}
     }
 }

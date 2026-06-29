@@ -102,7 +102,7 @@ pub use packet::{
     MAX_PAYLOAD_HEARSAY, MAX_PAYLOAD_TELEGRAM, MAX_TTL, Packet, PacketN, Payload, PayloadN,
 };
 #[doc(inline)]
-pub use router::{IgnoreReason, RouteAction, RouteActionN, Router};
+pub use router::{ExtRouteAction, IgnoreReason, RouteAction, RouteActionN, Router};
 #[doc(inline)]
 pub use seen::{SEEN_CAPACITY, SeenCache, fnv64};
 #[doc(inline)]
