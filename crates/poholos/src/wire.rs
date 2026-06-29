@@ -28,8 +28,18 @@
 //! [`FrameN`] is generic over a `CAP` const that sizes the inline buffer;
 //! [`encode`]/[`decode`] are generic over the same `CAP`. The alias [`Frame`]
 //! fixes `CAP` to [`MAX_FRAME_LEN`] (the legacy 22-byte frame) and is what
-//! nearly all code uses; a larger `CAP` reuses the identical codec for BLE 5
-//! extended advertising.
+//! nearly all code uses; the [`ExtFrame`] alias ([`MAX_EXT_FRAME_LEN`]) reuses
+//! the identical codec for BLE 5 extended advertising.
+//!
+//! # Wire versions
+//!
+//! Byte 0 carries a 2-bit version. [`encode`] writes version 0
+//! ([`WIRE_VERSION`]) for any frame that fits [`MAX_FRAME_LEN`] and version 1
+//! ([`WIRE_VERSION_EXT`]) for longer frames; the two share this identical
+//! header layout. [`decode`] accepts either, so a node is dual-stack — it
+//! emits the smallest-reach version a message needs (short messages stay
+//! version 0 so every node, legacy included, can carry them) and understands
+//! both on receipt.
 
 use crate::error::WireError;
 use crate::node_id::WireId;
@@ -45,7 +55,19 @@ use crate::packet::PacketN;
 pub const COMPANY_ID: u16 = 0xF10C;
 
 /// Wire protocol version carried in the top 2 bits of byte 0.
+///
+/// Version 0 is the legacy frame that fits the universal ~22-byte legacy
+/// advertising budget. See also [`WIRE_VERSION_EXT`].
 pub const WIRE_VERSION: u8 = 0;
+
+/// Wire protocol version for extended-advertising frames (BLE 5+), which may
+/// exceed the legacy 22-byte budget.
+///
+/// The header layout is identical to version 0 — only the permitted frame
+/// length differs. [`encode`] selects this version automatically when a
+/// frame does not fit [`MAX_FRAME_LEN`], and [`decode`] accepts it
+/// alongside version 0.
+pub const WIRE_VERSION_EXT: u8 = 1;
 
 /// Maximum encoded frame length in bytes.
 ///
@@ -53,6 +75,15 @@ pub const WIRE_VERSION: u8 = 0;
 /// every supported desktop platform. Changing this breaks on-air
 /// compatibility and the payload limits derived from it.
 pub const MAX_FRAME_LEN: usize = 22;
+
+/// Maximum encoded frame length for an extended (wire version 1) frame.
+///
+/// Sized so both packet shapes carry a 200-byte payload over BLE 5 extended
+/// advertising: `211` = [`HEADER_LEN_TELEGRAM`] (11) + 200. Hearsay frames,
+/// with the shorter header, reach 204 payload bytes. Individual adapters may
+/// cap their actual TX below this (one Windows adapter measured 156 in the
+/// step-1 spike); that is a transport-layer concern, not a wire limit.
+pub const MAX_EXT_FRAME_LEN: usize = HEADER_LEN_TELEGRAM + 200;
 
 /// Header length of a hearsay (broadcast) frame: flags + seq + src.
 pub(crate) const HEADER_LEN_HEARSAY: usize = 1 + 2 + 4;
@@ -129,6 +160,10 @@ impl<'de, const CAP: usize> serde::Deserialize<'de> for FrameN<CAP> {
 /// A legacy (wire version 0) frame: [`FrameN`] with `CAP` = [`MAX_FRAME_LEN`].
 pub type Frame = FrameN<MAX_FRAME_LEN>;
 
+/// An extended (wire version 1) frame for BLE 5 extended advertising:
+/// [`FrameN`] with `CAP` = [`MAX_EXT_FRAME_LEN`].
+pub type ExtFrame = FrameN<MAX_EXT_FRAME_LEN>;
+
 impl<const CAP: usize> FrameN<CAP> {
     /// The empty frame, used as ring-slot filler inside the crate.
     pub(crate) const EMPTY: Self = Self {
@@ -197,10 +232,24 @@ pub fn encode<const CAP: usize>(packet: &PacketN<CAP>) -> FrameN<CAP> {
         "Packet TTL invariant broken"
     );
 
+    let header_len = if packet.dest().is_some() {
+        HEADER_LEN_TELEGRAM
+    } else {
+        HEADER_LEN_HEARSAY
+    };
+    // Frames within the legacy budget stay version 0 so every node (legacy
+    // included) can carry them; only longer frames are tagged version 1,
+    // restricting them to extended-advertising-capable transports.
+    let version = if header_len + packet.payload().len() > MAX_FRAME_LEN {
+        WIRE_VERSION_EXT
+    } else {
+        WIRE_VERSION
+    };
+
     let mut buf = [0u8; CAP];
     let mut n = 0;
 
-    buf[n] = (WIRE_VERSION << VERSION_SHIFT)
+    buf[n] = (version << VERSION_SHIFT)
         | if packet.dest().is_some() {
             HAS_DEST_BIT
         } else {
@@ -248,7 +297,9 @@ pub fn decode<const CAP: usize>(bytes: &[u8]) -> Result<PacketN<CAP>, WireError>
 
     let flags = bytes[0];
     let version = flags >> VERSION_SHIFT;
-    if version != WIRE_VERSION {
+    // Versions 0 and 1 share this header layout (1 differs only in allowing
+    // a longer frame), so a dual-stack node decodes both; reserve 2 and 3.
+    if version != WIRE_VERSION && version != WIRE_VERSION_EXT {
         return Err(WireError::unsupported_version(version));
     }
     let has_dest = flags & HAS_DEST_BIT != 0;
@@ -390,7 +441,11 @@ mod tests {
     fn decode_rejects_bad_frames() {
         // These check error paths with no decoded packet to pin `CAP`, so
         // the capacity is named explicitly.
-        assert!(decode::<MAX_FRAME_LEN>(&[0u8; 3]).unwrap_err().is_truncated());
+        assert!(
+            decode::<MAX_FRAME_LEN>(&[0u8; 3])
+                .unwrap_err()
+                .is_truncated()
+        );
         assert!(
             decode::<MAX_FRAME_LEN>(&[0u8; MAX_FRAME_LEN + 1])
                 .unwrap_err()
@@ -402,10 +457,11 @@ mod tests {
         short[0] = HAS_DEST_BIT | 5;
         assert!(decode::<MAX_FRAME_LEN>(&short).unwrap_err().is_truncated());
 
-        // Wrong version.
+        // Unsupported version (2): versions 0 and 1 are accepted, 2 and 3
+        // are reserved.
         let p = Packet::hearsay(SRC, 0, b"x").unwrap();
         let mut bytes = *encode(&p).as_bytes().first_chunk::<8>().unwrap();
-        bytes[0] |= 0b0100_0000;
+        bytes[0] |= 0b1000_0000;
         assert!(
             decode::<MAX_FRAME_LEN>(&bytes)
                 .unwrap_err()
@@ -444,6 +500,42 @@ mod tests {
         let f = encode(&p);
         assert_eq!(f.len(), HEADER_LEN_TELEGRAM + 150);
         assert_eq!(decode::<CAP>(f.as_bytes()).unwrap(), p);
+    }
+
+    #[test]
+    fn long_frame_is_tagged_version_one() {
+        // A payload past the legacy budget forces wire version 1.
+        let p = PacketN::<MAX_EXT_FRAME_LEN>::hearsay_with(SRC, 1, &[7u8; 100], 16).unwrap();
+        let f = encode(&p);
+        assert!(f.len() > MAX_FRAME_LEN);
+        assert_eq!(f.as_bytes()[0] >> VERSION_SHIFT, WIRE_VERSION_EXT);
+        assert_eq!(decode::<MAX_EXT_FRAME_LEN>(f.as_bytes()).unwrap(), p);
+    }
+
+    #[test]
+    fn short_frame_stays_version_zero_at_ext_capacity() {
+        // An extended-capacity packet whose payload fits the legacy budget
+        // still encodes as version 0, byte-identical to the legacy encoding,
+        // so legacy-only nodes can carry it.
+        let p = PacketN::<MAX_EXT_FRAME_LEN>::hearsay_with(SRC, 0xBEEF, b"hi", 16).unwrap();
+        let f = encode(&p);
+        assert!(f.len() <= MAX_FRAME_LEN);
+        assert_eq!(f.as_bytes()[0] >> VERSION_SHIFT, WIRE_VERSION);
+        let legacy = encode(&Packet::hearsay_with(SRC, 0xBEEF, b"hi", 16).unwrap());
+        assert_eq!(f.as_bytes(), legacy.as_bytes());
+    }
+
+    #[test]
+    fn legacy_decode_rejects_oversized_ext_frame() {
+        // A version-1 frame is longer than the legacy capacity, so a v0-only
+        // decoder rejects it as oversized rather than misparsing it.
+        let p = PacketN::<MAX_EXT_FRAME_LEN>::hearsay_with(SRC, 1, &[7u8; 100], 16).unwrap();
+        let f = encode(&p);
+        assert!(
+            decode::<MAX_FRAME_LEN>(f.as_bytes())
+                .unwrap_err()
+                .is_oversized()
+        );
     }
 
     #[test]

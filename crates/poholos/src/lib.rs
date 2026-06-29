@@ -98,8 +98,8 @@ pub use node_id::WireId;
 pub use node_id::{NodeId, NodeIdError};
 #[doc(inline)]
 pub use packet::{
-    DEFAULT_TTL, MAX_PAYLOAD_HEARSAY, MAX_PAYLOAD_TELEGRAM, MAX_TTL, Packet, PacketN, Payload,
-    PayloadN,
+    DEFAULT_TTL, ExtPacket, ExtPayload, MAX_EXT_PAYLOAD_HEARSAY, MAX_EXT_PAYLOAD_TELEGRAM,
+    MAX_PAYLOAD_HEARSAY, MAX_PAYLOAD_TELEGRAM, MAX_TTL, Packet, PacketN, Payload, PayloadN,
 };
 #[doc(inline)]
 pub use router::{IgnoreReason, RouteAction, RouteActionN, Router};
@@ -107,5 +107,6 @@ pub use router::{IgnoreReason, RouteAction, RouteActionN, Router};
 pub use seen::{SEEN_CAPACITY, SeenCache, fnv64};
 #[doc(inline)]
 pub use wire::{
-    COMPANY_ID, Frame, FrameN, MAX_FRAME_LEN, WIRE_VERSION, decode, encode, manufacturer_frame,
+    COMPANY_ID, ExtFrame, Frame, FrameN, MAX_EXT_FRAME_LEN, MAX_FRAME_LEN, WIRE_VERSION,
+    WIRE_VERSION_EXT, decode, encode, manufacturer_frame,
 };

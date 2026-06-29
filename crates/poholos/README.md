@@ -34,15 +34,25 @@ I/O lives in the application layer (see the `poholos-cli` crate).
   repeating broadcast slot (BLE advertising), shared by the desktop CLI and
   embedded targets.
 
-### Frame capacity
+### Frame capacity and wire versions
 
 `Packet`, `Frame`, `Payload`, `RouteAction`, and `Rotation` are type aliases
 over capacity-generic types — `PacketN<CAP>`, `FrameN<CAP>`, and friends — fixed
 to `MAX_FRAME_LEN` (22), the BLE-legacy budget. `encode`/`decode` and
 `Router::originate`/`ingest` are likewise generic over `CAP`, so the same engine
-can carry larger frames on transports with more room (e.g. ~200-byte payloads
-over BLE 5 extended advertising) without duplicating the protocol logic. Reach
-for the aliases unless you specifically need a non-22-byte capacity.
+can carry larger frames on transports with more room without duplicating the
+protocol logic.
+
+For BLE 5 extended advertising there are matching `Ext*` aliases — `ExtPacket`,
+`ExtFrame`, `ExtPayload` — fixed to `MAX_EXT_FRAME_LEN` (211, i.e. a 200-byte
+payload). Byte 0 of every frame carries a 2-bit **wire version**: `encode`
+writes version 0 (`WIRE_VERSION`) for frames that fit the 22-byte budget and
+version 1 (`WIRE_VERSION_EXT`) for longer ones, which share the identical header
+layout. `decode` accepts both, so a node is dual-stack: short messages stay
+version 0 (every node, legacy included, can carry them) and only oversized
+messages become version 1, reaching extended-advertising-capable nodes only.
+
+Reach for the legacy aliases unless you specifically need the extended capacity.
 
 ## Duplicate suppression
 

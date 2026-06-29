@@ -33,7 +33,7 @@
 use crate::error::PacketError;
 use crate::node_id::WireId;
 use crate::seen::{FNV_OFFSET_BASIS, fnv64_update};
-use crate::wire::{HEADER_LEN_HEARSAY, HEADER_LEN_TELEGRAM, MAX_FRAME_LEN};
+use crate::wire::{HEADER_LEN_HEARSAY, HEADER_LEN_TELEGRAM, MAX_EXT_FRAME_LEN, MAX_FRAME_LEN};
 
 /// Default number of hops a new packet may travel.
 ///
@@ -60,6 +60,18 @@ pub const MAX_PAYLOAD_HEARSAY: usize = MAX_FRAME_LEN - HEADER_LEN_HEARSAY;
 ///
 /// Derived: [`MAX_FRAME_LEN`] (22) minus the 11-byte unicast header.
 pub const MAX_PAYLOAD_TELEGRAM: usize = MAX_FRAME_LEN - HEADER_LEN_TELEGRAM;
+
+/// Maximum payload bytes in an extended (wire version 1) hearsay packet.
+///
+/// Derived: [`MAX_EXT_FRAME_LEN`](crate::MAX_EXT_FRAME_LEN) minus the 7-byte
+/// broadcast header.
+pub const MAX_EXT_PAYLOAD_HEARSAY: usize = MAX_EXT_FRAME_LEN - HEADER_LEN_HEARSAY;
+
+/// Maximum payload bytes in an extended (wire version 1) telegram packet.
+///
+/// Derived: [`MAX_EXT_FRAME_LEN`](crate::MAX_EXT_FRAME_LEN) minus the 11-byte
+/// unicast header.
+pub const MAX_EXT_PAYLOAD_TELEGRAM: usize = MAX_EXT_FRAME_LEN - HEADER_LEN_TELEGRAM;
 
 /// Inline, fixed-capacity message payload, generic over the frame capacity.
 ///
@@ -118,6 +130,10 @@ impl<'de, const CAP: usize> serde::Deserialize<'de> for PayloadN<CAP> {
 /// A legacy (wire version 0) payload: [`PayloadN`] with `CAP` =
 /// [`MAX_FRAME_LEN`].
 pub type Payload = PayloadN<MAX_FRAME_LEN>;
+
+/// An extended (wire version 1) payload: [`PayloadN`] with `CAP` =
+/// [`MAX_EXT_FRAME_LEN`](crate::MAX_EXT_FRAME_LEN).
+pub type ExtPayload = PayloadN<MAX_EXT_FRAME_LEN>;
 
 impl<const CAP: usize> PayloadN<CAP> {
     pub(crate) fn copy_from(bytes: &[u8], max: usize) -> Result<Self, PacketError> {
@@ -197,6 +213,10 @@ pub struct PacketN<const CAP: usize> {
 /// A legacy (wire version 0) packet: [`PacketN`] with `CAP` =
 /// [`MAX_FRAME_LEN`].
 pub type Packet = PacketN<MAX_FRAME_LEN>;
+
+/// An extended (wire version 1) packet for BLE 5 extended advertising:
+/// [`PacketN`] with `CAP` = [`MAX_EXT_FRAME_LEN`](crate::MAX_EXT_FRAME_LEN).
+pub type ExtPacket = PacketN<MAX_EXT_FRAME_LEN>;
 
 impl<const CAP: usize> PacketN<CAP> {
     /// Maximum payload bytes for a hearsay packet at this capacity.

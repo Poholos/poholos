@@ -214,7 +214,9 @@ mod tests {
         };
         assert_eq!(delivered.ttl(), 16, "delivered copy keeps the received TTL");
         assert_eq!(
-            wire::decode::<MAX_FRAME_LEN>(relayed.as_bytes()).unwrap().ttl(),
+            wire::decode::<MAX_FRAME_LEN>(relayed.as_bytes())
+                .unwrap()
+                .ttl(),
             15
         );
     }
