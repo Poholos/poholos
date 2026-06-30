@@ -103,7 +103,7 @@ const CHIME: [Note; 2] = [
     Note(Pitch::Named(NamedPitch::A5), 180),
 ];
 
-/// An outgoing framen - mirrors `poholos-cli`.
+/// An outgoing frame - mirrors `poholos-cli`.
 #[derive(Debug)]
 pub enum Outgoing {
     /// Originated here: guaranteed a recurring share of airtime.

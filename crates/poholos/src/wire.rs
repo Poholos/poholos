@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright (c) 2026 Ivan Petrouchtchak
 
-//! On-air frame codec — the 22-byte wire format.
+//! On-air frame codec — packing packets into BLE advertising frames.
 //!
 //! Legacy BLE advertising allows ~31 bytes of advertising data; after the
 //! flags AD structure and the manufacturer-data AD header (length, type,

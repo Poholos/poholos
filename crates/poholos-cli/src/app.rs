@@ -93,10 +93,13 @@ async fn relay_frame(transport: &mut Transport, relay: &ExtFrame) {
 
 /// Parses a typed line into an outgoing packet, advancing `seq`.
 ///
-/// Packets use the extended ([`ExtPacket`]) capacity so the whole CLI runs
-/// at one frame size, but the payload caps enforced here remain the legacy
-/// v0 limits — a typed message therefore always encodes to a wire-version-0
-/// frame, which every transport can carry.
+/// Packets use the extended ([`ExtPacket`]) capacity so the whole CLI runs at
+/// one frame size, and the caps enforced here are the extended limits
+/// ([`MAX_EXT_PAYLOAD_HEARSAY`] / [`MAX_EXT_PAYLOAD_TELEGRAM`]). A short
+/// message still encodes to a wire-version-0 frame every transport can carry;
+/// a longer one becomes wire version 1, which [`encode`](poholos::encode)
+/// selects by size and only extended-advertising transports send. A frame a
+/// given transport cannot physically carry fails at the `send`, not here.
 fn parse_outgoing(seq: &mut u16, src: WireId, line: &str) -> Result<ExtPacket, String> {
     let next_seq = *seq;
 
