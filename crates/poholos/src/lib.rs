@@ -4,11 +4,13 @@
 //! Poholos mesh chat protocol over BLE advertising frames.
 //!
 //! Poholos (Ukrainian: *поголос* — rumor, hearsay) is a peer-to-peer mesh
-//! chat protocol designed to ride inside Bluetooth Low Energy legacy
-//! advertisements. The universal desktop baseline for those is ~31 bytes of
-//! advertising data (AD), leaving a **22-byte on-air frame** once AD structure
-//! overhead is accounted for. Everything in this crate is built around that
-//! budget.
+//! chat protocol designed to ride inside Bluetooth Low Energy advertising
+//! frames. The universal desktop baseline is the ~31-byte legacy
+//! advertisement, leaving a **22-byte on-air frame** once AD structure
+//! overhead is accounted for. The crate defaults to that budget but is
+//! generic over frame capacity, so the same engine also carries the larger
+//! frames BLE 5 extended advertising allows (see *Frame capacity and wire
+//! versions* below).
 //!
 //! # Design
 //!
@@ -24,7 +26,8 @@
 //! * [`Packet`] — a parsed protocol message, constructed via
 //!   [`Packet::hearsay`] (broadcast) or [`Packet::telegram`] (unicast).
 //! * [`Frame`] — an encoded on-air representation, at most
-//!   [`MAX_FRAME_LEN`] (22) bytes.
+//!   [`MAX_FRAME_LEN`] (22) bytes (the legacy alias; the underlying type is
+//!   generic over capacity — see below).
 //! * [`WireId`] — the compact 32-bit node identity used on the wire.
 //! * [`NodeId`] *(requires the `std` feature)* — the human-friendly node
 //!   name, e.g. `alice-3f2a`.
@@ -33,6 +36,20 @@
 //! * [`rotation::Rotation`] — the airtime scheduler for transports with a
 //!   single repeating broadcast slot (BLE advertising), shared by the
 //!   desktop CLI and embedded targets.
+//!
+//! # Frame capacity and wire versions
+//!
+//! [`Packet`], [`Frame`], [`Payload`], [`RouteAction`], and
+//! [`rotation::Rotation`] are aliases over capacity-generic types
+//! ([`PacketN`], [`FrameN`], …) fixed to [`MAX_FRAME_LEN`] (22); [`encode`],
+//! [`decode`], and the [`Router`] methods are generic over the same `CAP`.
+//! For BLE 5 extended advertising the `Ext*` aliases ([`ExtPacket`],
+//! [`ExtFrame`], …) fix it to [`MAX_EXT_FRAME_LEN`] (211). Byte 0 carries a
+//! 2-bit wire version: [`encode`] writes [`WIRE_VERSION`] (0) for frames
+//! within the legacy budget and [`WIRE_VERSION_EXT`] (1) for larger ones
+//! (identical header layout), and [`decode`] accepts both — so a node is
+//! dual-stack, keeping short messages reachable by every node while long
+//! ones reach extended-advertising-capable nodes only.
 //!
 //! # Examples
 //!
@@ -73,7 +90,8 @@
 //! * `std` *(default)* — enables [`NodeId`], a `LinkedHashSet`-backed
 //!   [`SeenCache`], and backtrace capture in errors. Without it the crate
 //!   is `no_std` and allocation-free.
-//! * `serde` — serde derives on the wire types.
+//! * `serde` — `Serialize`/`Deserialize` impls on the wire types
+//!   (hand-written, as serde lacks const-generic array support).
 //! * `postcard` — convenience codec in [`codec`].
 
 #![cfg_attr(not(feature = "std"), no_std)]

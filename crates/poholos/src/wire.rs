@@ -79,7 +79,7 @@ pub const MAX_FRAME_LEN: usize = 22;
 /// Maximum encoded frame length for an extended (wire version 1) frame.
 ///
 /// Sized so both packet shapes carry a 200-byte payload over BLE 5 extended
-/// advertising: `211` = [`HEADER_LEN_TELEGRAM`] (11) + 200. Hearsay frames,
+/// advertising: `211` = the 11-byte telegram header + 200. Hearsay frames,
 /// with the shorter header, reach 204 payload bytes. Individual adapters may
 /// cap their actual TX below this (one Windows adapter measured 156 in the
 /// step-1 spike); that is a transport-layer concern, not a wire limit.

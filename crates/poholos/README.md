@@ -1,12 +1,14 @@
 # poholos
 
 A peer-to-peer mesh chat protocol that rides inside Bluetooth Low Energy
-legacy advertisements. *Poholos* (Ukrainian *по́голос*, ˈpo-ho-los — rumor, hearsay) floods
+**advertising frames**. *Poholos* (Ukrainian *по́голос*, ˈpo-ho-los — rumor, hearsay) floods
 short messages hop-by-hop across nearby devices with no infrastructure, no
 pairing, and no connections: every node simply broadcasts and re-broadcasts what
 it hears. The universal desktop baseline for legacy advertising data is ~31
 bytes, leaving a **22-byte on-air frame** once AD structure overhead is
-accounted for, and everything in this crate is built around that budget.
+accounted for. The crate defaults to that budget but is **generic over frame
+capacity**, so the same engine also carries the larger frames BLE 5 extended
+advertising allows (see *Frame capacity and wire versions* below).
 
 This crate is the protocol core of the poholos workspace. For the console
 client, the micro:bit firmware, the wire format, and end-to-end usage, see the
@@ -24,7 +26,8 @@ I/O lives in the application layer (see the `poholos-cli` crate).
 
 - `Packet` — a parsed protocol message, constructed via `Packet::hearsay`
   (broadcast) or `Packet::telegram` (unicast).
-- `Frame` — an encoded on-air representation, at most `MAX_FRAME_LEN` (22) bytes.
+- `Frame` — an encoded on-air representation, at most `MAX_FRAME_LEN` (22) bytes
+  (the legacy alias; the underlying type is generic over capacity — see below).
 - `WireId` — the compact 32-bit node identity used on the wire.
 - `NodeId` *(requires the `std` feature)* — the human-friendly node name, e.g.
   `alice-3f2a`.

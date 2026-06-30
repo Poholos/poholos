@@ -94,9 +94,11 @@ carry up to a 200-byte payload over BLE 5 extended advertising. The header
 layout is identical — only the permitted length differs — and `encode`
 picks the version by size: short messages stay version 0 (heard by every
 node, legacy included) and only long ones become version 1 (heard by
-extended-scan-capable nodes). Today Windows *sends* version 1 (capped by
-the adapter, ~156 bytes in testing); every platform *receives* it, and the
-UDP test transport carries it in full.
+extended-scan-capable nodes). Today Windows and the micro:bit *send*
+version 1 — Windows capped at ~156 bytes by the test adapter, the micro:bit
+the full ~200; extended-scan-capable nodes *receive* it, and the UDP test
+transport carries it in full. See *Platform notes* for what's validated
+where.
 
 ## Library features
 
