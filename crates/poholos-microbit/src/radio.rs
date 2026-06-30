@@ -3,22 +3,34 @@
 
 //! BLE radio bring-up: MPSL + Nordic SoftDevice Controller + trouble host.
 //!
-//! This replicates the setup in `microbit-bsp`'s `ble.rs` but with one
-//! crucial difference: the controller is built with **scan support**
-//! (`support_scan`), because a poholos node is an observer and a
-//! broadcaster at once. The BSP's builder hardcodes advertising +
-//! peripheral only, which is why we own this layer ourselves.
+//! This replicates the setup in `microbit-bsp`'s `ble.rs` but the
+//! controller is built for the full poholos role set: a node is an
+//! observer and a broadcaster at once, and it is **dual-stack** across
+//! both wire versions. The BSP's builder hardcodes legacy advertising +
+//! peripheral only, which is why we own this layer ourselves and add:
+//!
+//! * `support_ext_scan` + `support_le_2m_phy` — extended scanning, which
+//!   receives *both* legacy and extended (BLE 5) advertisements, so the
+//!   node hears wire version 0 and 1 alike;
+//! * `support_ext_adv` + `adv_buffer_cfg(255)` — extended advertising for
+//!   *all* outgoing frames: version 0 as legacy-PDU extended adverts (still
+//!   heard by legacy-only scanners), version 1 as extended-PDU. Legacy
+//!   `support_adv` is deliberately absent — mixing legacy and extended HCI
+//!   commands (we scan with the extended set) is forbidden by the
+//!   controller and returns Command Disallowed.
 //!
 //! [`run`] drives three concerns forever:
 //!
 //! * the trouble host runner, whose scan-report handler decodes poholos
 //!   frames out of manufacturer data and feeds `RX_FRAMES`;
-//! * a continuous passive scan session;
+//! * a continuous passive extended-scan session;
 //! * the advertiser, which time-shares the single advertising slot via
 //!   the shared [`poholos::rotation`] policy, fed from `OUTGOING` — the
-//!   firmware twin of `poholos-cli`'s `advertise_loop`.
+//!   firmware twin of `poholos-cli`'s `advertise_loop`. It picks legacy or
+//!   extended advertising per frame by size, exactly as the desktop
+//!   Windows transport does.
 
-use bt_hci::param::LeAdvReportsIter;
+use bt_hci::param::LeExtAdvReportsIter;
 use embassy_futures::select::{Either, select, select3};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{
@@ -29,10 +41,12 @@ use embassy_nrf::{Peri, bind_interrupts, rng};
 use embassy_time::{Duration, Instant, Timer};
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
-use poholos::rotation::Rotation;
-use poholos::{COMPANY_ID, Frame};
+use poholos::rotation::ExtRotation;
+use poholos::{COMPANY_ID, ExtFrame, MAX_FRAME_LEN};
 use static_cell::StaticCell;
-use trouble_host::advertise::{AdStructure, Advertisement, AdvertisementParameters};
+use trouble_host::advertise::{
+    AdStructure, Advertisement, AdvertisementParameters, AdvertisementSet,
+};
 use trouble_host::connection::ScanConfig;
 use trouble_host::prelude::DefaultPacketPool;
 use trouble_host::scan::Scanner;
@@ -40,10 +54,18 @@ use trouble_host::{Address, Host, HostResources};
 
 use crate::{OUTGOING, Outgoing, RX_FRAMES};
 
-/// Memory handed to the SoftDevice Controller: the exact requirement
-/// this adv+scan configuration reported on hardware ("1752 bytes
-/// needed" in the phase-3 boot log).
-const SDC_MEMORY_SIZE: usize = 1752;
+/// Memory handed to the SoftDevice Controller.
+///
+/// The extended adv + extended scan + 2M PHY + 255-byte ext-adv buffer
+/// configuration reported ~2792 bytes needed on hardware; 4 KiB leaves
+/// headroom. If `build` reports a different size, trim or raise to match
+/// the boot log — over-provisioning only logs a harmless "memory buffer
+/// too big" note.
+const SDC_MEMORY_SIZE: usize = 4096;
+
+/// Buffer for an encoded extended advertisement: the largest frame plus
+/// the manufacturer-data AD overhead (length + type + 2-byte company id).
+const EXT_ADV_DATA_LEN: usize = poholos::MAX_EXT_FRAME_LEN + 8;
 
 /// One rotation dwell, converted to the embassy clock.
 const DWELL: Duration = Duration::from_millis(poholos::rotation::DWELL.as_millis() as u64);
@@ -121,8 +143,22 @@ pub fn init(
     let sdc_mem = SDC_MEM.init(sdc::Mem::new());
 
     let sdc = sdc::Builder::new()?
-        .support_adv()?
-        .support_scan()?
+        // ALL advertising goes through the *extended* command set
+        // (`advertise_ext`), even wire-version-0 frames (sent as legacy-PDU
+        // extended advertisements). This is mandatory, not an optimization:
+        // the BLE controller forbids mixing legacy and extended HCI
+        // commands, and we use extended *scanning* below — issuing a legacy
+        // advertising command alongside it returns Command Disallowed.
+        .support_ext_adv()?
+        // Extended scanning receives both legacy and extended
+        // advertisements; the 2M PHY lets it follow ext-adv AUX packets
+        // (Windows places the data channel on 2M).
+        .support_ext_scan()?
+        .support_le_2m_phy()?
+        // The default adv buffer only holds a legacy 31-byte advertisement;
+        // raise it so the controller can store a ~200-byte ext advert,
+        // else LeSetExtAdvData fails with Memory Capacity Exceeded.
+        .adv_buffer_cfg(255)?
         .build(sdc_p, sdc_rng, mpsl, sdc_mem)?;
     Ok((sdc, mpsl))
 }
@@ -136,12 +172,14 @@ pub fn init(
 struct ScanHandler;
 
 impl trouble_host::prelude::EventHandler for ScanHandler {
-    fn on_adv_reports(&self, mut reports: LeAdvReportsIter<'_>) {
+    // Extended scanning reports legacy *and* extended advertisements
+    // through this one callback, so both wire versions arrive here.
+    fn on_ext_adv_reports(&self, mut reports: LeExtAdvReportsIter<'_>) {
         while let Some(Ok(report)) = reports.next() {
             let Some(bytes) = poholos::manufacturer_frame(report.data) else {
                 continue;
             };
-            let Ok(frame) = Frame::copy_from(bytes) else {
+            let Ok(frame) = ExtFrame::copy_from(bytes) else {
                 continue;
             };
             if let Err(err) = RX_FRAMES.try_send(frame) {
@@ -179,21 +217,24 @@ pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Addres
             active: false,
             ..Default::default()
         };
-        let _session = defmt::unwrap!(scanner.scan(&config).await.map_err(|_| ()), "scan start");
-        defmt::info!("scanning for poholos frames");
+        let _session = defmt::unwrap!(
+            scanner.scan_ext(&config).await.map_err(|_| ()),
+            "ext scan start"
+        );
+        defmt::info!("ext-scanning for poholos frames");
         core::future::pending::<()>().await
     };
 
     let advertise = async {
-        let mut rotation = Rotation::new();
+        let mut rotation = ExtRotation::new();
         // The frame currently on air and its advertiser handle, held
         // only for RAII (dropping it stops the broadcast — hence the
         // underscore: it is written, never read). Consecutive turns
         // often serve the same frame; re-advertising it would be
-        // pointless churn.
-        let mut on_air: Option<Frame> = None;
+        // pointless churn. `advertise` and `advertise_ext` return the same
+        // handle type, so one variable holds either.
+        let mut on_air: Option<ExtFrame> = None;
         let mut _handle = None;
-        let params = AdvertisementParameters::default();
 
         loop {
             let Some(frame) = rotation.next_frame() else {
@@ -207,27 +248,57 @@ pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Addres
                 // Stop the previous advertisement before starting the
                 // replacement on the single slot.
                 _handle = None;
-                let mut adv_data = [0u8; 31];
-                let len = defmt::unwrap!(
-                    AdStructure::encode_slice(
-                        &[AdStructure::ManufacturerSpecificData {
-                            company_identifier: COMPANY_ID,
-                            payload: frame.as_bytes(),
-                        }],
-                        &mut adv_data,
-                    )
-                    .map_err(|_| ()),
-                    "frame + AD overhead always fits 31 bytes"
-                );
-                match peripheral
-                    .advertise(
-                        &params,
-                        Advertisement::NonconnectableNonscannableUndirected {
+                // Frames within the legacy budget go out as legacy
+                // advertisements so every node hears them; only larger
+                // (wire version 1) frames use extended advertising.
+                let result = if frame.len() <= MAX_FRAME_LEN {
+                    // Wire version 0: a legacy-PDU advertisement, sent via the
+                    // extended command set (see `init`). Legacy PDUs are heard
+                    // by every scanner, legacy-only nodes included.
+                    let mut adv_data = [0u8; 31];
+                    let len = defmt::unwrap!(
+                        AdStructure::encode_slice(
+                            &[AdStructure::ManufacturerSpecificData {
+                                company_identifier: COMPANY_ID,
+                                payload: frame.as_bytes(),
+                            }],
+                            &mut adv_data,
+                        )
+                        .map_err(|_| ()),
+                        "legacy frame + AD overhead always fits 31 bytes"
+                    );
+                    let sets = [AdvertisementSet {
+                        params: AdvertisementParameters::default(),
+                        data: Advertisement::NonconnectableNonscannableUndirected {
                             adv_data: &adv_data[..len],
                         },
-                    )
-                    .await
-                {
+                    }];
+                    let mut handles = AdvertisementSet::handles(&sets);
+                    peripheral.advertise_ext(&sets, &mut handles).await
+                } else {
+                    let mut adv_data = [0u8; EXT_ADV_DATA_LEN];
+                    let len = defmt::unwrap!(
+                        AdStructure::encode_slice(
+                            &[AdStructure::ManufacturerSpecificData {
+                                company_identifier: COMPANY_ID,
+                                payload: frame.as_bytes(),
+                            }],
+                            &mut adv_data,
+                        )
+                        .map_err(|_| ()),
+                        "ext frame + AD overhead fits the extended buffer"
+                    );
+                    let sets = [AdvertisementSet {
+                        params: AdvertisementParameters::default(),
+                        data: Advertisement::ExtNonconnectableNonscannableUndirected {
+                            adv_data: &adv_data[..len],
+                            anonymous: false,
+                        },
+                    }];
+                    let mut handles = AdvertisementSet::handles(&sets);
+                    peripheral.advertise_ext(&sets, &mut handles).await
+                };
+                match result {
                     Ok(adv) => {
                         _handle = Some(adv);
                         on_air = Some(frame);
@@ -262,7 +333,7 @@ pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Addres
     defmt::panic!("BLE host stopped");
 }
 
-fn enqueue(rotation: &mut Rotation, out: Outgoing) {
+fn enqueue(rotation: &mut ExtRotation, out: Outgoing) {
     match out {
         Outgoing::Own(frame) => rotation.enqueue_own(frame),
         Outgoing::Relay(frame) => rotation.enqueue_relay(frame),

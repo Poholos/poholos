@@ -53,7 +53,7 @@ so logs from several nodes can be correlated during testing:
 
 ```
 2026-06-11 14:32:07 [mb-60c6 → all] SOS - test
-2026-06-11 14:32:09 [mb-60c6 → you] I am OK
+2026-06-11 14:32:09 [mb-60c6 → you] I am OK - long status sent over BLE 5 extended advertising
 ```
 
 Real BLE radio:
@@ -125,14 +125,17 @@ but can only *send* what fits a single 128-bit service UUID: 15 raw bytes
 (one byte tags and lengths the frame), so hearsay typed on a Mac is capped
 at 8 payload bytes and telegrams at 4.
 
-Windows additionally **sends and receives** wire-version-1 frames via BLE 5
-extended advertising (TX capped ~156 bytes by the test adapter; RX handles
-the full ~200). Receiving version 1 elsewhere needs BLE 5 hardware and an
-extended-scan backend — validated on Windows (btleplug) and the micro:bit,
-not yet on Linux (the test box is BLE 4.2-only) or macOS. Linux and macOS
-remain version-0 senders. Short messages stay version 0, so the mesh stays
-fully connected regardless. Per-adapter TX-cap detection and micro:bit
-extended advertising are the remaining pieces.
+Windows and the micro:bit are **dual-stack**: each sends wire version 0 as
+a legacy advertisement (heard by every node) and oversized wire version 1
+via BLE 5 extended advertising, and each scans with extended scanning,
+which receives both. Windows TX is capped ~156 bytes by the test adapter;
+the micro:bit carries the full ~200. Linux (the test box is BLE 4.2-only)
+and macOS remain version-0 senders. Short messages stay version 0, so the
+mesh stays fully connected regardless of who speaks version 1.
+
+The remaining piece is runtime per-adapter TX-cap detection on Windows
+(today a conservative constant). Linux/macOS extended-advertising senders
+would need BLE 5 hardware to develop against.
 
 ## Verifying a fresh checkout
 
@@ -163,12 +166,17 @@ micro:bit v2 (nRF52833, `thumbv7em-none-eabihf`), radio via the Nordic
 SoftDevice Controller + `trouble` (linked into the image — no separate
 SoftDevice flash), validated end-to-end against Windows and macOS desktop
 nodes, including a two-hop Mac → Windows → micro:bit relay.
-It scans continuously, relays with the same flood/TTL/dedup semantics
-and rotation airtime policy as the desktops, scrolls delivered messages
-on the 5×5 LED matrix (telegrams to it get an `@` prefix and a chime on
-the onboard speaker), and originates two canned messages:
+It scans continuously with **extended scanning** (so it hears both legacy
+and BLE 5 extended advertisements), relays with the same flood/TTL/dedup
+semantics and rotation airtime policy as the desktops, and is dual-stack:
+short frames go out as legacy advertisements, oversized (wire version 1)
+frames via extended advertising. Delivered messages scroll on the 5×5 LED
+matrix, each with a leading glyph for its kind — `*` for a broadcast, `@`
+(plus a chime on the onboard speaker) for a telegram addressed to it.
+It originates two canned messages:
 
-* **Button A** — "I am OK" telegram to the preconfigured buddy node.
+* **Button A** — a long "I am OK" status telegram to the preconfigured
+  buddy node, sized to ride wire version 1 / extended advertising.
 * **Button B** — "SOS - test" broadcast.
 
 Known gap: the board only parses manufacturer-data advertisements, so it
@@ -195,9 +203,11 @@ cargo run -p poholos-cli -- --id alice-0001
 
 `crates/poholos-microbit-morse` is a variant firmware whose *input* is morse
 code keyed on the two buttons instead of canned messages — otherwise a full
-mesh node, identical on the radio. It builds on `poholos-morse`, a small
-`no_std`, host-tested decoder that turns dot/dash elements plus pause
-boundaries into text.
+mesh node, identical on the radio: dual-stack across both wire versions like
+the canned firmware, so a short keyed message broadcasts as a legacy
+advertisement and a long one rides BLE 5 extended advertising. It builds on
+`poholos-morse`, a small `no_std`, host-tested decoder that turns dot/dash
+elements plus pause boundaries into text.
 
 Keying:
 
