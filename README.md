@@ -43,6 +43,17 @@ cargo run -p poholos-cli -- --name alice --transport udp
 cargo run -p poholos-cli -- --name bob   --transport udp
 ```
 
+Real BLE radio:
+
+```sh
+cargo run -p poholos-cli -- --name alice     # BLE is the default (no need for --transport ble)
+```
+
+`--name` appends a random 4-hex-digit suffix on every start; use
+`--id alice-0001` instead to pin the full identity (and thus the wire
+id) across restarts — required when something addresses you by a baked-in
+name, like the micro:bit's buddy telegram.
+
 Type a short message to broadcast (*hearsay*). 
 `@bob-9c01 hi` sends a unicast (*telegram*) — the wire id derives from the target's full display name,
 no peer directory required.
@@ -55,17 +66,6 @@ so logs from several nodes can be correlated during testing:
 2026-06-11 14:32:07 [mb-60c6 → all] SOS - test
 2026-06-11 14:32:09 [mb-60c6 → you] I am OK - long status sent over BLE 5 extended advertising
 ```
-
-Real BLE radio:
-
-```sh
-cargo run -p poholos-cli -- --name alice     # BLE is the default (no need for --transport ble)
-```
-
-`--name` appends a random 4-hex-digit suffix on every start; use
-`--id alice-0001` instead to pin the full identity (and thus the wire
-id) across restarts — required when something addresses you by a baked-in
-name, like the micro:bit's buddy telegram.
 
 ## Wire format (version 0, max 22 bytes)
 
@@ -129,13 +129,9 @@ Windows and the micro:bit are **dual-stack**: each sends wire version 0 as
 a legacy advertisement (heard by every node) and oversized wire version 1
 via BLE 5 extended advertising, and each scans with extended scanning,
 which receives both. Windows TX is capped ~156 bytes by the test adapter;
-the micro:bit carries the full ~200. Linux (the test box is BLE 4.2-only)
+the micro:bit carries the full ~200. Linux (my test box is BLE 4.2-only)
 and macOS remain version-0 senders. Short messages stay version 0, so the
 mesh stays fully connected regardless of who speaks version 1.
-
-The remaining piece is runtime per-adapter TX-cap detection on Windows
-(today a conservative constant). Linux/macOS extended-advertising senders
-would need BLE 5 hardware to develop against.
 
 ## Verifying a fresh checkout
 
