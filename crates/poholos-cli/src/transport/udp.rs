@@ -16,21 +16,22 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use poholos::{Frame, MAX_FRAME_LEN};
+use poholos::{ExtFrame, MAX_EXT_FRAME_LEN};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 
 /// How many received frames may queue up before the reader applies
-/// backpressure. Frames are 22 bytes and the chat loop drains fast, so a
-/// small buffer is plenty; raising it only delays detection of a stuck UI.
+/// backpressure. Frames are at most a couple hundred bytes and the chat
+/// loop drains fast, so a small buffer is plenty; raising it only delays
+/// detection of a stuck UI.
 const RECV_QUEUE: usize = 64;
 
 /// UDP broadcast transport bound to a fixed port.
 #[derive(Debug)]
 pub struct UdpTransport {
     socket: Arc<UdpSocket>,
-    rx: mpsc::Receiver<Frame>,
+    rx: mpsc::Receiver<ExtFrame>,
     port: u16,
 }
 
@@ -90,7 +91,7 @@ impl UdpTransport {
     ///
     /// # Errors
     /// Fails on socket errors.
-    pub async fn send(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn send(&mut self, frame: &ExtFrame) -> Result<()> {
         self.socket
             .send_to(frame.as_bytes(), (Ipv4Addr::BROADCAST, self.port))
             .await
@@ -99,7 +100,7 @@ impl UdpTransport {
     }
 
     /// Waits for the next frame; `None` if the reader task died.
-    pub async fn recv(&mut self) -> Option<Frame> {
+    pub async fn recv(&mut self) -> Option<ExtFrame> {
         self.rx.recv().await
     }
 }
@@ -110,12 +111,12 @@ impl UdpTransport {
 const MAX_CONSECUTIVE_RECV_ERRORS: u32 = 64;
 
 /// Receives datagrams forever, forwarding plausible frames to the channel.
-async fn read_loop(socket: Arc<UdpSocket>, tx: mpsc::Sender<Frame>) {
+async fn read_loop(socket: Arc<UdpSocket>, tx: mpsc::Sender<ExtFrame>) {
     // One byte larger than a valid frame so oversized datagrams are
     // detectable: Linux truncates them to the buffer (caught by the frame
     // length check below), Windows fails the recv with WSAEMSGSIZE
     // (caught by the error arm below).
-    let mut buf = [0_u8; MAX_FRAME_LEN + 1];
+    let mut buf = [0_u8; MAX_EXT_FRAME_LEN + 1];
     let mut consecutive_errors = 0_u32;
     loop {
         // Recv errors are routine on Windows: WSAEMSGSIZE for oversized
@@ -133,7 +134,7 @@ async fn read_loop(socket: Arc<UdpSocket>, tx: mpsc::Sender<Frame>) {
         consecutive_errors = 0;
         // Foreign datagrams on our port that are not frame-sized are not
         // ours to interpret; drop quietly like radio noise.
-        let Ok(frame) = Frame::copy_from(&buf[..n]) else {
+        let Ok(frame) = ExtFrame::copy_from(&buf[..n]) else {
             continue;
         };
         if tx.send(frame).await.is_err() {

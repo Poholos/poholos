@@ -21,8 +21,13 @@
 //! | OS      | Mechanism | Frame budget |
 //! |---------|-----------|--------------|
 //! | Linux   | BlueZ manufacturer data (`bluer`) | full 22 bytes |
-//! | Windows | `BluetoothLEAdvertisementPublisher` manufacturer data | full 22 bytes |
+//! | Windows | `BluetoothLEAdvertisementPublisher` manufacturer data | 22 bytes legacy, ~156 extended |
 //! | macOS   | CoreBluetooth **128-bit service UUID** (1-byte tag+len) | 15 raw bytes |
+//!
+//! Windows additionally carries oversized (wire version 1) frames via
+//! extended advertising (see the `windows` module). The other platforms
+//! remain legacy-only senders for now, so they emit only wire-version-0
+//! frames.
 //!
 //! The macOS budget comes from CoreBluetooth "refusing" to advertise
 //! foreign manufacturer data: the frame is packed into a 128-bit service
@@ -31,8 +36,8 @@
 //! than truncating.
 
 use anyhow::{Result, bail, ensure};
-use poholos::Frame;
-use poholos::rotation::{DWELL, Rotation};
+use poholos::ExtFrame;
+use poholos::rotation::{DWELL, ExtRotation};
 use tokio::sync::mpsc;
 
 mod scan;
@@ -61,7 +66,7 @@ mod unsupported;
 use unsupported as platform;
 
 /// How many scanned frames may queue before the scanner waits. BLE scan
-/// reports trickle in at radio pace; 64 frames of 22 bytes is generous.
+/// reports trickle in at radio pace; 64 frames is generous.
 const RECV_QUEUE: usize = 64;
 
 /// How many outgoing frames may queue between the chat loop and the
@@ -73,9 +78,9 @@ const SEND_QUEUE: usize = 16;
 #[derive(Debug)]
 enum Outgoing {
     /// Typed by the local user: guaranteed a recurring share of airtime.
-    Own(Frame),
+    Own(ExtFrame),
     /// Forwarded for the mesh: gets one dwell, then sheds.
-    Relay(Frame),
+    Relay(ExtFrame),
 }
 
 /// BLE advertising transport: btleplug scanner plus a rotation-fed
@@ -83,7 +88,7 @@ enum Outgoing {
 #[derive(Debug)]
 pub struct BleTransport {
     out: mpsc::Sender<Outgoing>,
-    rx: mpsc::Receiver<Frame>,
+    rx: mpsc::Receiver<ExtFrame>,
 }
 
 impl BleTransport {
@@ -109,7 +114,7 @@ impl BleTransport {
     /// # Errors
     /// Fails if the frame exceeds the platform TX budget (macOS: 16
     /// bytes via the name channel) or the advertiser task is gone.
-    pub async fn send_own(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn send_own(&mut self, frame: &ExtFrame) -> Result<()> {
         ensure!(
             frame.len() <= platform::MAX_FRAME,
             "frame is {} bytes but this platform can only advertise {} — \
@@ -131,7 +136,7 @@ impl BleTransport {
     ///
     /// # Errors
     /// Fails if the advertiser task is gone.
-    pub async fn send_relay(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn send_relay(&mut self, frame: &ExtFrame) -> Result<()> {
         if frame.len() > platform::MAX_FRAME {
             return Ok(());
         }
@@ -142,7 +147,7 @@ impl BleTransport {
     }
 
     /// Waits for the next scanned frame; `None` if the scanner died.
-    pub async fn recv(&mut self) -> Option<Frame> {
+    pub async fn recv(&mut self) -> Option<ExtFrame> {
         self.rx.recv().await
     }
 }
@@ -153,11 +158,11 @@ impl BleTransport {
 /// Returns (stopping the rotation, with the last advertisement lingering
 /// on air until the advertiser drops) when the transport is dropped.
 async fn advertise_loop(mut advertiser: platform::Advertiser, mut rx: mpsc::Receiver<Outgoing>) {
-    let mut rotation = Rotation::new();
+    let mut rotation = ExtRotation::new();
     // The frame currently on air. Consecutive turns often serve the same
     // frame (an own message with no relays waiting); re-registering it
     // with the platform stack would be pointless churn.
-    let mut on_air: Option<Frame> = None;
+    let mut on_air: Option<ExtFrame> = None;
 
     loop {
         let Some(frame) = rotation.next_frame() else {
@@ -200,7 +205,7 @@ async fn advertise_loop(mut advertiser: platform::Advertiser, mut rx: mpsc::Rece
     }
 }
 
-fn enqueue(rotation: &mut Rotation, out: &Outgoing) {
+fn enqueue(rotation: &mut ExtRotation, out: &Outgoing) {
     match *out {
         Outgoing::Own(frame) => rotation.enqueue_own(frame),
         Outgoing::Relay(frame) => rotation.enqueue_relay(frame),
@@ -216,7 +221,7 @@ fn enqueue(rotation: &mut Rotation, out: &Outgoing) {
 /// Clearing the belief is what lets [`advertise_loop`]'s "already on air?" guard
 /// retry the *same* frame next turn instead of assuming it is still up; leaving
 /// a stale belief would strand a node that only ever sends one frame silent.
-fn record_on_air(on_air: &mut Option<Frame>, frame: Frame, registered: bool) {
+fn record_on_air(on_air: &mut Option<ExtFrame>, frame: ExtFrame, registered: bool) {
     *on_air = registered.then_some(frame);
 }
 
@@ -224,9 +229,9 @@ fn record_on_air(on_air: &mut Option<Frame>, frame: Frame, registered: bool) {
 mod tests {
     use super::*;
 
-    fn test_frame() -> Frame {
+    fn test_frame() -> ExtFrame {
         // Smallest well-formed frame: 1 flag + 2 seq + 4 src, empty payload.
-        Frame::copy_from(&[0, 0, 0, 0, 0, 0, 0]).expect("valid frame")
+        ExtFrame::copy_from(&[0, 0, 0, 0, 0, 0, 0]).expect("valid frame")
     }
 
     #[test]

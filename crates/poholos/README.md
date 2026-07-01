@@ -1,12 +1,14 @@
 # poholos
 
 A peer-to-peer mesh chat protocol that rides inside Bluetooth Low Energy
-legacy advertisements. *Poholos* (Ukrainian *по́голос*, ˈpo-ho-los — rumor, hearsay) floods
+**advertising frames**. *Poholos* (Ukrainian *по́голос*, ˈpo-ho-los — rumor, hearsay) floods
 short messages hop-by-hop across nearby devices with no infrastructure, no
 pairing, and no connections: every node simply broadcasts and re-broadcasts what
 it hears. The universal desktop baseline for legacy advertising data is ~31
 bytes, leaving a **22-byte on-air frame** once AD structure overhead is
-accounted for, and everything in this crate is built around that budget.
+accounted for. The crate defaults to that budget but is **generic over frame
+capacity**, so the same engine also carries the larger frames BLE 5 extended
+advertising allows (see *Frame capacity and wire versions* below).
 
 This crate is the protocol core of the poholos workspace. For the console
 client, the micro:bit firmware, the wire format, and end-to-end usage, see the
@@ -24,7 +26,8 @@ I/O lives in the application layer (see the `poholos-cli` crate).
 
 - `Packet` — a parsed protocol message, constructed via `Packet::hearsay`
   (broadcast) or `Packet::telegram` (unicast).
-- `Frame` — an encoded on-air representation, at most `MAX_FRAME_LEN` (22) bytes.
+- `Frame` — an encoded on-air representation, at most `MAX_FRAME_LEN` (22) bytes
+  (the legacy alias; the underlying type is generic over capacity — see below).
 - `WireId` — the compact 32-bit node identity used on the wire.
 - `NodeId` *(requires the `std` feature)* — the human-friendly node name, e.g.
   `alice-3f2a`.
@@ -33,6 +36,26 @@ I/O lives in the application layer (see the `poholos-cli` crate).
 - `rotation::Rotation` — the airtime scheduler for transports with a single
   repeating broadcast slot (BLE advertising), shared by the desktop CLI and
   embedded targets.
+
+### Frame capacity and wire versions
+
+`Packet`, `Frame`, `Payload`, `RouteAction`, and `Rotation` are type aliases
+over capacity-generic types — `PacketN<CAP>`, `FrameN<CAP>`, and friends — fixed
+to `MAX_FRAME_LEN` (22), the BLE-legacy budget. `encode`/`decode` and
+`Router::originate`/`ingest` are likewise generic over `CAP`, so the same engine
+can carry larger frames on transports with more room without duplicating the
+protocol logic.
+
+For BLE 5 extended advertising there are matching `Ext*` aliases — `ExtPacket`,
+`ExtFrame`, `ExtPayload` — fixed to `MAX_EXT_FRAME_LEN` (211, i.e. a 200-byte
+payload). Byte 0 of every frame carries a 2-bit **wire version**: `encode`
+writes version 0 (`WIRE_VERSION`) for frames that fit the 22-byte budget and
+version 1 (`WIRE_VERSION_EXT`) for longer ones, which share the identical header
+layout. `decode` accepts both, so a node is dual-stack: short messages stay
+version 0 (every node, legacy included, can carry them) and only oversized
+messages become version 1, reaching extended-advertising-capable nodes only.
+
+Reach for the legacy aliases unless you specifically need the extended capacity.
 
 ## Duplicate suppression
 
@@ -76,7 +99,8 @@ match b.ingest(frame.as_bytes())? {
 - `std` *(default)* — enables `NodeId`, a `LinkedHashSet`-backed `SeenCache`, and
   backtrace capture in errors. Without it the crate is `no_std` and
   allocation-free.
-- `serde` — serde derives on the wire types.
+- `serde` — `Serialize`/`Deserialize` impls on the wire types (hand-written, as
+  serde lacks const-generic array support).
 - `postcard` — convenience codec in `poholos::codec`.
 
 ## License

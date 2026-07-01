@@ -4,7 +4,9 @@
 //! End-to-end mesh simulation over the public API only.
 #![cfg(feature = "std")] // NodeId requires `std`; the lib tests cover no_std.
 
-use poholos::{DEFAULT_TTL, IgnoreReason, NodeId, Packet, RouteAction, Router, decode};
+use poholos::{
+    DEFAULT_TTL, IgnoreReason, MAX_FRAME_LEN, NodeId, Packet, RouteAction, Router, decode,
+};
 
 /// A — B — C — D line topology: hearsay floods the chain, every node
 /// delivers exactly once, TTL decrements per hop, and the echo back along
@@ -27,7 +29,7 @@ fn hearsay_floods_a_line_of_nodes() {
         };
         assert_eq!(delivered.payload(), b"flood");
         assert_eq!(
-            decode(relayed.as_bytes()).unwrap().ttl(),
+            decode::<MAX_FRAME_LEN>(relayed.as_bytes()).unwrap().ttl(),
             DEFAULT_TTL - u8::try_from(hop).unwrap(),
             "TTL decrements once per relay"
         );

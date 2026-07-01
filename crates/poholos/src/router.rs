@@ -10,6 +10,11 @@
 //! returned [`RouteAction`]. This makes the entire protocol testable
 //! without radios and portable to `no_std` targets.
 //!
+//! The router itself is not parameterized by frame capacity; instead
+//! [`ingest`](Router::ingest) and [`originate`](Router::originate) are
+//! generic over `CAP`, so a single router can handle the legacy 22-byte
+//! frame ([`RouteAction`]) and a larger one ([`RouteActionN`]) alike.
+//!
 //! # Routing rules
 //!
 //! In order, for every decodable frame:
@@ -26,26 +31,36 @@
 
 use crate::error::WireError;
 use crate::node_id::WireId;
-use crate::packet::Packet;
+use crate::packet::PacketN;
 use crate::seen::SeenCache;
-use crate::wire::{self, Frame};
+use crate::wire::{self, FrameN, MAX_EXT_FRAME_LEN, MAX_FRAME_LEN};
 
-/// What a node should do with a frame it just received.
+/// What a node should do with a frame it just received, generic over the
+/// frame capacity `CAP`.
 ///
 /// `Deliver*` variants carry the decoded packet to show the user;
 /// `*Forward` variants carry the re-encoded frame (TTL already
-/// decremented) to hand back to the transport.
+/// decremented) to hand back to the transport. Most code uses the
+/// [`RouteAction`] alias (`CAP` = [`MAX_FRAME_LEN`]).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum RouteAction {
+pub enum RouteActionN<const CAP: usize> {
     /// Show this packet to the local user; do not forward.
-    Deliver(Packet),
+    Deliver(PacketN<CAP>),
     /// Show this packet to the local user and re-broadcast the frame.
-    DeliverAndForward(Packet, Frame),
+    DeliverAndForward(PacketN<CAP>, FrameN<CAP>),
     /// Not for us: re-broadcast the frame without local delivery.
-    Forward(Frame),
+    Forward(FrameN<CAP>),
     /// Do nothing; the reason says why.
     Ignore(IgnoreReason),
 }
+
+/// A routing decision over the legacy 22-byte frame: [`RouteActionN`] with
+/// `CAP` = [`MAX_FRAME_LEN`].
+pub type RouteAction = RouteActionN<MAX_FRAME_LEN>;
+
+/// A routing decision over the extended (wire version 1) frame:
+/// [`RouteActionN`] with `CAP` = [`MAX_EXT_FRAME_LEN`].
+pub type ExtRouteAction = RouteActionN<MAX_EXT_FRAME_LEN>;
 
 /// Why a received frame produced no deliver or forward action.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -116,7 +131,7 @@ impl Router {
     /// Registering prevents the node from re-delivering its own message
     /// when the transport echoes it back. Hand the returned frame to the
     /// transport for broadcast.
-    pub fn originate(&mut self, packet: &Packet) -> Frame {
+    pub fn originate<const CAP: usize>(&mut self, packet: &PacketN<CAP>) -> FrameN<CAP> {
         let _newly_seen = self.seen.insert(packet.dedup_key());
         wire::encode(packet)
     }
@@ -130,14 +145,17 @@ impl Router {
     /// Returns [`WireError`] if the bytes do not decode as a valid frame;
     /// callers in radio environments should expect and tolerate this for
     /// foreign advertisements that slip through transport filtering.
-    pub fn ingest(&mut self, bytes: &[u8]) -> Result<RouteAction, WireError> {
-        let mut packet = wire::decode(bytes)?;
+    pub fn ingest<const CAP: usize>(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<RouteActionN<CAP>, WireError> {
+        let mut packet = wire::decode::<CAP>(bytes)?;
 
         if packet.src() == self.local {
-            return Ok(RouteAction::Ignore(IgnoreReason::Own));
+            return Ok(RouteActionN::Ignore(IgnoreReason::Own));
         }
         if !self.seen.insert(packet.dedup_key()) {
-            return Ok(RouteAction::Ignore(IgnoreReason::Duplicate));
+            return Ok(RouteActionN::Ignore(IgnoreReason::Duplicate));
         }
 
         match packet.dest() {
@@ -145,22 +163,22 @@ impl Router {
             None => {
                 let deliver = packet;
                 if packet.hop() {
-                    Ok(RouteAction::DeliverAndForward(
+                    Ok(RouteActionN::DeliverAndForward(
                         deliver,
                         wire::encode(&packet),
                     ))
                 } else {
-                    Ok(RouteAction::Deliver(deliver))
+                    Ok(RouteActionN::Deliver(deliver))
                 }
             }
             // Telegram for us: the destination consumes it.
-            Some(dest) if dest == self.local => Ok(RouteAction::Deliver(packet)),
+            Some(dest) if dest == self.local => Ok(RouteActionN::Deliver(packet)),
             // Telegram for someone else: relay if hops remain.
             Some(_) => {
                 if packet.hop() {
-                    Ok(RouteAction::Forward(wire::encode(&packet)))
+                    Ok(RouteActionN::Forward(wire::encode(&packet)))
                 } else {
-                    Ok(RouteAction::Ignore(IgnoreReason::ExpiredTtl))
+                    Ok(RouteActionN::Ignore(IgnoreReason::ExpiredTtl))
                 }
             }
         }
@@ -170,6 +188,7 @@ impl Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packet::Packet;
 
     const A: WireId = WireId::new(1);
     const B: WireId = WireId::new(2);
@@ -198,7 +217,34 @@ mod tests {
             panic!("expected DeliverAndForward");
         };
         assert_eq!(delivered.ttl(), 16, "delivered copy keeps the received TTL");
-        assert_eq!(wire::decode(relayed.as_bytes()).unwrap().ttl(), 15);
+        assert_eq!(
+            wire::decode::<MAX_FRAME_LEN>(relayed.as_bytes())
+                .unwrap()
+                .ttl(),
+            15
+        );
+    }
+
+    #[test]
+    fn ext_capacity_routes_through_a_relay() {
+        // originate/ingest at a non-default capacity, end to end: a 200-byte
+        // payload that only the generic (non-alias) path can carry.
+        const CAP: usize = 211;
+        let payload = [0x5Au8; 200];
+
+        let mut node_a = Router::new(A);
+        let mut node_b = Router::new(B);
+
+        let pkt = PacketN::<CAP>::hearsay_with(A, 1, &payload, 16).unwrap();
+        let frame = node_a.originate(&pkt);
+
+        let RouteActionN::DeliverAndForward(delivered, relayed) =
+            node_b.ingest::<CAP>(frame.as_bytes()).unwrap()
+        else {
+            panic!("B should deliver and forward");
+        };
+        assert_eq!(delivered.payload(), &payload);
+        assert_eq!(wire::decode::<CAP>(relayed.as_bytes()).unwrap().ttl(), 15);
     }
 
     #[test]

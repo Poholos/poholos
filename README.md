@@ -43,19 +43,6 @@ cargo run -p poholos-cli -- --name alice --transport udp
 cargo run -p poholos-cli -- --name bob   --transport udp
 ```
 
-Type a short message to broadcast (*hearsay*). 
-`@bob-9c01 hi` sends a unicast (*telegram*) — the wire id derives from the target's full display name,
-no peer directory required.
-`/quit` exits.
-
-Received messages print with a local receive timestamp and addressing,
-so logs from several nodes can be correlated during testing:
-
-```
-2026-06-11 14:32:07 [mb-60c6 → all] SOS - test
-2026-06-11 14:32:09 [mb-60c6 → you] I am OK
-```
-
 Real BLE radio:
 
 ```sh
@@ -66,6 +53,19 @@ cargo run -p poholos-cli -- --name alice     # BLE is the default (no need for -
 `--id alice-0001` instead to pin the full identity (and thus the wire
 id) across restarts — required when something addresses you by a baked-in
 name, like the micro:bit's buddy telegram.
+
+Type a short message to broadcast (*hearsay*). 
+`@bob-9c01 hi` sends a unicast (*telegram*) — the wire id derives from the target's full display name,
+no peer directory required.
+`/quit` exits.
+
+Received messages print with a local receive timestamp and addressing,
+so logs from several nodes can be correlated during testing:
+
+```
+2026-06-11 14:32:07 [mb-60c6 → all] SOS - test
+2026-06-11 14:32:09 [mb-60c6 → you] I am OK - long status sent over BLE 5 extended advertising
+```
 
 ## Wire format (version 0, max 22 bytes)
 
@@ -83,7 +83,22 @@ rest        : payload - ≤ 15 bytes hearsay, ≤ 11 bytes telegram
   excluded so the same packet at different hop counts dedups correctly.
 * Manufacturer-data company id `0xF10C` (above the assigned range; BlueZ
   silently drops `0xFFFF`).
-* Oversized messages are rejected at the prompt, not fragmented (MVP).
+* Messages above the protocol maximum (200-byte payload) are rejected at
+  the prompt, not fragmented; a frame a given transport cannot physically
+  carry fails that send with a platform-specific message.
+
+### Wire version 1 (extended advertising)
+
+Frames past the 22-byte legacy budget are tagged **wire version 1** and
+carry up to a 200-byte payload over BLE 5 extended advertising. The header
+layout is identical — only the permitted length differs — and `encode`
+picks the version by size: short messages stay version 0 (heard by every
+node, legacy included) and only long ones become version 1 (heard by
+extended-scan-capable nodes). Today Windows and the micro:bit *send*
+version 1 — Windows capped at ~156 bytes by the test adapter, the micro:bit
+the full ~200; extended-scan-capable nodes *receive* it, and the UDP test
+transport carries it in full. See *Platform notes* for what's validated
+where.
 
 ## Library features
 
@@ -103,16 +118,22 @@ These three platforms were validated on real radio.
 | OS        | Scan | Advertise | Send budget |
 |-----------|------|-----------|-----------------|
 | Linux     | btleplug | BlueZ manufacturer data (`bluer`, `Type::Peripheral`) | 22 bytes |
-| Windows 11| btleplug | `BluetoothLEAdvertisementPublisher` manufacturer data | 22 bytes |
+| Windows 11| btleplug | `BluetoothLEAdvertisementPublisher` manufacturer data | 22 legacy / ~156 extended |
 | macOS     | btleplug | CoreBluetooth **128-bit service UUID** (1-byte tag+len) | **15 bytes** |
 
 Windows cannot act as a GATT peripheral (HRESULT failure) — irrelevant
 here, since poholos only broadcasts. macOS can *hear* full 22-byte frames
 but can only *send* what fits a single 128-bit service UUID: 15 raw bytes
 (one byte tags and lengths the frame), so hearsay typed on a Mac is capped
-at 8 payload bytes and telegrams at 4. Extended advertising would lift
-this between capable nodes and is a planned post-MVP optimization
-(requires BT 5.0+ hardware).
+at 8 payload bytes and telegrams at 4.
+
+Windows and the micro:bit are **dual-stack**: each sends wire version 0 as
+a legacy advertisement (heard by every node) and oversized wire version 1
+via BLE 5 extended advertising, and each scans with extended scanning,
+which receives both. Windows TX is capped ~156 bytes by the test adapter;
+the micro:bit carries the full ~200. Linux (my test box is BLE 4.2-only)
+and macOS remain version-0 senders. Short messages stay version 0, so the
+mesh stays fully connected regardless of who speaks version 1.
 
 ## Verifying a fresh checkout
 
@@ -143,12 +164,17 @@ micro:bit v2 (nRF52833, `thumbv7em-none-eabihf`), radio via the Nordic
 SoftDevice Controller + `trouble` (linked into the image — no separate
 SoftDevice flash), validated end-to-end against Windows and macOS desktop
 nodes, including a two-hop Mac → Windows → micro:bit relay.
-It scans continuously, relays with the same flood/TTL/dedup semantics
-and rotation airtime policy as the desktops, scrolls delivered messages
-on the 5×5 LED matrix (telegrams to it get an `@` prefix and a chime on
-the onboard speaker), and originates two canned messages:
+It scans continuously with **extended scanning** (so it hears both legacy
+and BLE 5 extended advertisements), relays with the same flood/TTL/dedup
+semantics and rotation airtime policy as the desktops, and is dual-stack:
+short frames go out as legacy advertisements, oversized (wire version 1)
+frames via extended advertising. Delivered messages scroll on the 5×5 LED
+matrix, each with a leading glyph for its kind — `*` for a broadcast, `@`
+(plus a chime on the onboard speaker) for a telegram addressed to it.
+It originates two canned messages:
 
-* **Button A** — "I am OK" telegram to the preconfigured buddy node.
+* **Button A** — a long "I am OK" status telegram to the preconfigured
+  buddy node, sized to ride wire version 1 / extended advertising.
 * **Button B** — "SOS - test" broadcast.
 
 Known gap: the board only parses manufacturer-data advertisements, so it
@@ -175,9 +201,11 @@ cargo run -p poholos-cli -- --id alice-0001
 
 `crates/poholos-microbit-morse` is a variant firmware whose *input* is morse
 code keyed on the two buttons instead of canned messages — otherwise a full
-mesh node, identical on the radio. It builds on `poholos-morse`, a small
-`no_std`, host-tested decoder that turns dot/dash elements plus pause
-boundaries into text.
+mesh node, identical on the radio: dual-stack across both wire versions like
+the canned firmware, so a short keyed message broadcasts as a legacy
+advertisement and a long one rides BLE 5 extended advertising. It builds on
+`poholos-morse`, a small `no_std`, host-tested decoder that turns dot/dash
+elements plus pause boundaries into text.
 
 Keying:
 

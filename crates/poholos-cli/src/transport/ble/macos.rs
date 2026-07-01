@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ble_peripheral_rust::{Peripheral, PeripheralImpl as _};
-use poholos::Frame;
+use poholos::ExtFrame;
 
 use super::scan::{MAX_UUID_FRAME, frame_to_service_uuid};
 
@@ -88,7 +88,7 @@ impl Advertiser {
     /// # Errors
     /// Fails if `frame` exceeds [`MAX_FRAME`] bytes or CoreBluetooth
     /// rejects the advertisement.
-    pub async fn set_frame(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn set_frame(&mut self, frame: &ExtFrame) -> Result<()> {
         if frame.len() > MAX_FRAME {
             bail!(
                 "frame is {} bytes but macOS can only advertise {MAX_FRAME} \

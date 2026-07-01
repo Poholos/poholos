@@ -939,7 +939,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "poholos"
-version = "0.1.1"
+version = "0.2.1"
 dependencies = [
  "hashlink",
  "postcard",
@@ -948,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "poholos-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ble-peripheral-rust",

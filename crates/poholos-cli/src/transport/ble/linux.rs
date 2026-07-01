@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 use bluer::adv::{Advertisement, AdvertisementHandle, Type};
-use poholos::{COMPANY_ID, Frame};
+use poholos::{COMPANY_ID, ExtFrame};
 
 /// Largest frame this platform can put on air: BlueZ manufacturer data
 /// carries the full protocol frame.
@@ -62,7 +62,7 @@ impl Advertiser {
     ///
     /// # Errors
     /// Fails if BlueZ rejects the advertisement registration.
-    pub async fn set_frame(&mut self, frame: &Frame) -> Result<()> {
+    pub async fn set_frame(&mut self, frame: &ExtFrame) -> Result<()> {
         // Tear the previous advertisement down *before* registering the
         // new one. Dropping the handle is what unregisters it with BlueZ
         // (RAII), and BlueZ grants only a single advertising instance, so

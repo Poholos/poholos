@@ -47,7 +47,7 @@ use microbit_bsp::display::{Bitmap, Brightness, Frame as Glyph, LedMatrix as Led
 use microbit_bsp::speaker::{NamedPitch, Note, Pitch, PwmSpeaker};
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use panic_probe as _;
-use poholos::{Frame, Packet, RouteAction, Router, WireId};
+use poholos::{ExtFrame, ExtPacket, ExtRouteAction, Router, WireId};
 use poholos_morse::{Composer, Symbol};
 use trouble_host::Address;
 
@@ -58,11 +58,21 @@ mod radio;
 type LedMatrix = LedMatrixDriver<Output<'static>, 5, 5>;
 type Button = Input<'static>;
 
-/// A scrollable incoming message; 15 payload bytes plus prefix fits.
-type DisplayMsg = String<24>;
+/// A scrollable incoming message: sized for the largest deliverable payload
+/// ([`poholos::MAX_EXT_PAYLOAD_HEARSAY`]) plus a 2-byte prefix, so even a
+/// full wire-version-1 message scrolls in its entirety.
+type DisplayMsg = String<{ poholos::MAX_EXT_PAYLOAD_HEARSAY + 2 }>;
 
-/// Maximum composed-message length: the hearsay payload budget.
-const MSG_LEN: usize = poholos::MAX_PAYLOAD_HEARSAY;
+/// Leading glyph (plus a space) on a delivered hearsay message, marking
+/// where a new broadcast begins as text scrolls past. Two chars, matching
+/// the `@ ` telegram prefix, so [`DisplayMsg`] still holds a full payload.
+/// ASCII so the pendolino LED font renders it.
+const HEARSAY_MARK: &str = "* ";
+
+/// Maximum composed-message length: the extended hearsay payload budget, so
+/// a long morse message exceeds the 22-byte legacy frame and goes out as
+/// wire version 1 over extended advertising (short ones stay version 0).
+const MSG_LEN: usize = poholos::MAX_EXT_PAYLOAD_HEARSAY;
 /// An owned composed message handed to the router for broadcast.
 type Message = String<MSG_LEN>;
 /// Maximum dot/dash elements in a valid morse character (matches
@@ -71,7 +81,7 @@ type Message = String<MSG_LEN>;
 const MAX_MORSE: usize = 6;
 
 /// Frames heard by the scanner, awaiting routing.
-static RX_FRAMES: Channel<CriticalSectionRawMutex, Frame, 8> = Channel::new();
+static RX_FRAMES: Channel<CriticalSectionRawMutex, ExtFrame, 8> = Channel::new();
 /// Frames awaiting airtime, classed so the rotation can prioritize.
 static OUTGOING: Channel<CriticalSectionRawMutex, Outgoing, 8> = Channel::new();
 /// Raw button events from the input tasks, awaiting the composer.
@@ -104,7 +114,7 @@ const GLYPH_SHOW: Duration = Duration::from_millis(150);
 /// How long each decoded character stays lit on the matrix.
 const CHAR_SHOW: Duration = Duration::from_millis(400);
 /// Per-character dwell for the scrolling display.
-const SCROLL_MS_PER_CHAR: u64 = 750;
+const SCROLL_MS_PER_CHAR: u64 = 500;
 
 /// Two ascending notes announcing "a telegram for *you*".
 const CHIME: [Note; 2] = [
@@ -136,9 +146,9 @@ const DASH_GLYPH: Glyph<5, 5> = Glyph::new([
 #[derive(Debug)]
 pub enum Outgoing {
     /// Originated here: guaranteed a recurring share of airtime.
-    Own(Frame),
+    Own(ExtFrame),
     /// Forwarded for the mesh: gets one dwell, then sheds.
-    Relay(Frame),
+    Relay(ExtFrame),
 }
 
 /// A button gesture, resolved by the input tasks into composer intent.
@@ -227,7 +237,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(speaker_task(speaker));
     spawner.must_spawn(router_task(wire_id));
 
-    // Radio bring-up: MPSL + SoftDevice Controller (adv + scan).
+    // Radio bring-up: MPSL + SoftDevice Controller (extended adv + scan).
     let (sdc, mpsl) = defmt::unwrap!(radio::init(radio::RadioPeripherals {
         rtc0: p.RTC0,
         timer0: p.TIMER0,
@@ -383,25 +393,26 @@ async fn router_task(local: WireId) {
     loop {
         match select(RX_FRAMES.receive(), COMPOSE.receive()).await {
             Either::First(frame) => match router.ingest(frame.as_bytes()) {
-                Ok(RouteAction::Deliver(packet)) => deliver(&packet, local),
-                Ok(RouteAction::DeliverAndForward(packet, relay)) => {
+                Ok(ExtRouteAction::Deliver(packet)) => deliver(&packet, local),
+                Ok(ExtRouteAction::DeliverAndForward(packet, relay)) => {
                     deliver(&packet, local);
                     defmt::debug!("relaying frame from {=u32:08x}", frame_src(&relay));
                     OUTGOING.send(Outgoing::Relay(relay)).await;
                 }
-                Ok(RouteAction::Forward(relay)) => {
+                Ok(ExtRouteAction::Forward(relay)) => {
                     defmt::debug!("relaying frame from {=u32:08x}", frame_src(&relay));
                     OUTGOING.send(Outgoing::Relay(relay)).await;
                 }
                 // Duplicates, own echoes, expired telegrams, and foreign or
                 // corrupt advertisements: routine radio noise.
-                Ok(RouteAction::Ignore(_)) | Err(_) => {}
+                Ok(ExtRouteAction::Ignore(_)) | Err(_) => {}
             },
             Either::Second(text) => {
                 let next = seq.unwrap_or_else(|| Instant::now().as_ticks() as u16);
                 seq = Some(next.wrapping_add(1));
-                // The composer caps text at the hearsay budget by construction.
-                if let Ok(packet) = Packet::hearsay(local, next, text.as_bytes()) {
+                // The composer caps text at the extended hearsay budget by
+                // construction; `encode` picks the wire version by size.
+                if let Ok(packet) = ExtPacket::hearsay(local, next, text.as_bytes()) {
                     let frame = router.originate(&packet);
                     defmt::info!("sending {=str} (seq {=u16})", text.as_str(), next);
                     OUTGOING.send(Outgoing::Own(frame)).await;
@@ -413,16 +424,28 @@ async fn router_task(local: WireId) {
 
 /// Shows a delivered packet: defmt for the log, LED scroll for the user.
 /// Telegrams addressed to us get an `@` prefix and a chime.
-fn deliver(packet: &Packet, local: WireId) {
+fn deliver(packet: &ExtPacket, local: WireId) {
     let text = core::str::from_utf8(packet.payload()).unwrap_or("<bin>");
     defmt::info!("received from {=u32:08x}: {=str}", packet.src().get(), text);
     let mut msg = DisplayMsg::new();
     if packet.dest() == Some(local) {
+        // Telegram for us: `@` marks it (and where the message starts).
         let _ = msg.push_str("@ ");
         // Full queue means a chime is already pending: it covers this one too.
         let _ = CHIMES.try_send(());
+    } else {
+        // Hearsay (broadcast): a leading glyph marks the start of a new
+        // message, so back-to-back ones are legible as they scroll past.
+        let _ = msg.push_str(HEARSAY_MARK);
     }
-    let _ = msg.push_str(text);
+    // The buffer is sized for a full payload, so this normally pushes the
+    // whole message; go char by char (push_str is all-or-nothing) and stop
+    // if it ever fills, truncating rather than blanking on overflow.
+    for c in text.chars() {
+        if msg.push(c).is_err() {
+            break;
+        }
+    }
     enqueue_display(msg);
 }
 
@@ -458,7 +481,7 @@ fn ble_address() -> Address {
 
 /// Reads the source wire id straight out of an encoded frame (bytes 3..7,
 /// big-endian), for log lines that should not re-decode.
-fn frame_src(frame: &Frame) -> u32 {
+fn frame_src(frame: &ExtFrame) -> u32 {
     let b = frame.as_bytes();
     u32::from_be_bytes([b[3], b[4], b[5], b[6]])
 }

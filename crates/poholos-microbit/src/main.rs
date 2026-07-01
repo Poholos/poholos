@@ -5,9 +5,10 @@
 //!
 //! A full mesh node: scans continuously, relays frames with the shared
 //! flood/TTL/dedup semantics, scrolls delivered messages on the 5×5 LED
-//! matrix, and originates two canned messages - button **A** sends
-//! an "I am OK" telegram to the preconfigured buddy node, button **B**
-//! broadcasts "SOS - test".
+//! matrix, and originates two canned messages - button **A** sends a
+//! longer "I am OK" status telegram to the preconfigured buddy node (long
+//! enough that it rides wire version 1 over extended advertising), button
+//! **B** broadcasts "SOS - test".
 //!
 //! The buddy is baked in at compile time: set `POHOLOS_BUDDY` (a full
 //! node id such as `alice-0001`) when building; pair it with a desktop
@@ -42,7 +43,7 @@ use microbit_bsp::display::{Brightness, LedMatrix as LedMatrixDriver};
 use microbit_bsp::speaker::{NamedPitch, Note, Pitch, PwmSpeaker};
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use panic_probe as _;
-use poholos::{Frame, Packet, RouteAction, Router, WireId};
+use poholos::{ExtFrame, ExtPacket, ExtRouteAction, Router, WireId};
 use trouble_host::Address;
 
 mod radio;
@@ -60,11 +61,31 @@ const BUDDY_NAME: &str = match option_env!("POHOLOS_BUDDY") {
     None => "alice-0001",
 };
 
-/// A scrollable message; 15 payload bytes plus prefix fits comfortably.
-type DisplayMsg = String<24>;
+/// Button A's "I am OK" telegram payload.
+///
+/// Deliberately longer than the 11-byte legacy telegram budget so the
+/// encoded frame exceeds [`poholos::MAX_FRAME_LEN`] and goes out as wire
+/// version 1 over **extended advertising** — this is what exercises the
+/// micro:bit's extended-advertising TX path. Stays within the extended
+/// telegram limit ([`poholos::MAX_EXT_PAYLOAD_TELEGRAM`]).
+const OK_MESSAGE: &[u8] = b"I am OK - long status sent over BLE 5 extended advertising";
+
+/// A scrollable message: sized for the largest deliverable payload
+/// ([`poholos::MAX_EXT_PAYLOAD_HEARSAY`]) plus the 2-byte `@ ` telegram
+/// prefix, so even a full wire-version-1 message scrolls in its entirety.
+/// A long message just takes a long time to cross the 5×5 matrix (see
+/// [`SCROLL_MS_PER_CHAR`]).
+type DisplayMsg = String<{ poholos::MAX_EXT_PAYLOAD_HEARSAY + 2 }>;
+
+/// Leading glyph (plus a space) on a delivered hearsay message, marking
+/// where a new broadcast begins as text scrolls past. Two chars, matching
+/// the `@ ` telegram prefix, so [`DisplayMsg`] still holds a full payload.
+/// Kept to ASCII so the pendolino LED font renders it; `>` is reserved for
+/// own-send echoes and `@` for telegrams.
+const HEARSAY_MARK: &str = "* ";
 
 /// Frames heard by the scanner, awaiting routing.
-static RX_FRAMES: Channel<CriticalSectionRawMutex, Frame, 8> = Channel::new();
+static RX_FRAMES: Channel<CriticalSectionRawMutex, ExtFrame, 8> = Channel::new();
 /// Frames awaiting airtime, classed so the rotation can prioritize.
 static OUTGOING: Channel<CriticalSectionRawMutex, Outgoing, 8> = Channel::new();
 /// Button presses awaiting the router task.
@@ -82,13 +103,13 @@ const CHIME: [Note; 2] = [
     Note(Pitch::Named(NamedPitch::A5), 180),
 ];
 
-/// An outgoing framen - mirrors `poholos-cli`.
+/// An outgoing frame - mirrors `poholos-cli`.
 #[derive(Debug)]
 pub enum Outgoing {
     /// Originated here: guaranteed a recurring share of airtime.
-    Own(Frame),
+    Own(ExtFrame),
     /// Forwarded for the mesh: gets one dwell, then sheds.
-    Relay(Frame),
+    Relay(ExtFrame),
 }
 
 #[derive(Copy, Clone, Debug, defmt::Format)]
@@ -148,7 +169,7 @@ async fn main(spawner: Spawner) {
     spawner.must_spawn(speaker_task(speaker));
     spawner.must_spawn(router_task(wire_id, buddy));
 
-    // Radio bring-up: MPSL + SoftDevice Controller (adv + scan).
+    // Radio bring-up: MPSL + SoftDevice Controller (extended adv + scan).
     let (sdc, mpsl) = defmt::unwrap!(radio::init(radio::RadioPeripherals {
         rtc0: p.RTC0,
         timer0: p.TIMER0,
@@ -190,28 +211,27 @@ async fn router_task(local: WireId, buddy: WireId) {
     loop {
         match select(RX_FRAMES.receive(), BUTTONS.receive()).await {
             Either::First(frame) => match router.ingest(frame.as_bytes()) {
-                Ok(RouteAction::Deliver(packet)) => deliver(&packet, local),
-                Ok(RouteAction::DeliverAndForward(packet, relay)) => {
+                Ok(ExtRouteAction::Deliver(packet)) => deliver(&packet, local),
+                Ok(ExtRouteAction::DeliverAndForward(packet, relay)) => {
                     deliver(&packet, local);
                     defmt::debug!("relaying frame from {=u32:08x}", frame_src(&relay));
                     OUTGOING.send(Outgoing::Relay(relay)).await;
                 }
-                Ok(RouteAction::Forward(relay)) => {
+                Ok(ExtRouteAction::Forward(relay)) => {
                     defmt::debug!("relaying frame from {=u32:08x}", frame_src(&relay));
                     OUTGOING.send(Outgoing::Relay(relay)).await;
                 }
                 // Duplicates, own echoes, expired telegrams, and foreign
                 // or corrupt advertisements: routine radio noise.
-                Ok(RouteAction::Ignore(_)) | Err(_) => {}
+                Ok(ExtRouteAction::Ignore(_)) | Err(_) => {}
             },
             Either::Second(button) => {
-                let next = seq
-                    .unwrap_or_else(|| Instant::now().as_ticks() as u16);
+                let next = seq.unwrap_or_else(|| Instant::now().as_ticks() as u16);
                 seq = Some(next.wrapping_add(1));
 
                 let packet = match button {
-                    ButtonEvent::A => Packet::telegram(local, buddy, next, b"I am OK"),
-                    ButtonEvent::B => Packet::hearsay(local, next, b"SOS - test"),
+                    ButtonEvent::A => ExtPacket::telegram(local, buddy, next, OK_MESSAGE),
+                    ButtonEvent::B => ExtPacket::hearsay(local, next, b"SOS - test"),
                 };
                 // Static payloads are within the limits by construction.
                 let Ok(packet) = packet else { continue };
@@ -229,20 +249,28 @@ async fn router_task(local: WireId, buddy: WireId) {
 
 /// Shows a delivered packet: defmt for the log, LED scroll for the user.
 /// Telegrams addressed to us get an `@` prefix and a chime.
-fn deliver(packet: &Packet, local: WireId) {
+fn deliver(packet: &ExtPacket, local: WireId) {
     let text = core::str::from_utf8(packet.payload()).unwrap_or("<bin>");
-    defmt::info!(
-        "received from {=u32:08x}: {=str}",
-        packet.src().get(),
-        text
-    );
+    defmt::info!("received from {=u32:08x}: {=str}", packet.src().get(), text);
     let mut msg = DisplayMsg::new();
     if packet.dest() == Some(local) {
+        // Telegram for us: `@` marks it (and where the message starts).
         let _ = msg.push_str("@ ");
         // Full queue means a chime is already pending.
         let _ = CHIMES.try_send(());
+    } else {
+        // Hearsay (broadcast): a leading glyph marks the start of a new
+        // message, so back-to-back ones are legible as they scroll past.
+        let _ = msg.push_str(HEARSAY_MARK);
     }
-    let _ = msg.push_str(text);
+    // The buffer is sized for a full payload, so this normally pushes the
+    // whole message; go char by char (push_str is all-or-nothing) and stop
+    // if it ever fills, truncating rather than blanking on overflow.
+    for c in text.chars() {
+        if msg.push(c).is_err() {
+            break;
+        }
+    }
     enqueue_display(msg);
 }
 
@@ -286,7 +314,7 @@ fn ble_address() -> Address {
 
 /// Reads the source wire id straight out of an encoded frame (bytes
 /// 3..7, big-endian), for log lines that should not re-decode.
-fn frame_src(frame: &Frame) -> u32 {
+fn frame_src(frame: &ExtFrame) -> u32 {
     let b = frame.as_bytes();
     u32::from_be_bytes([b[3], b[4], b[5], b[6]])
 }
@@ -337,7 +365,7 @@ async fn display_task(mut display: LedMatrix, name: String<8>) {
 
 /// Per-character dwell for the scrolling display. Slower than the BSP
 /// default, which proved too fast to read on hardware.
-const SCROLL_MS_PER_CHAR: u64 = 750;
+const SCROLL_MS_PER_CHAR: u64 = 500;
 
 /// Scrolls `text` across the LED matrix at [`SCROLL_MS_PER_CHAR`] each.
 async fn scroll_text(display: &mut LedMatrix, text: &str) {
