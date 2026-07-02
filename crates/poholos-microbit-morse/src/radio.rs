@@ -9,15 +9,17 @@
 //! both wire versions. The BSP's builder hardcodes legacy advertising +
 //! peripheral only, which is why we own this layer ourselves and add:
 //!
-//! * `support_ext_scan` + `support_le_2m_phy` — extended scanning, which
-//!   receives *both* legacy and extended (BLE 5) advertisements, so the
-//!   node hears wire version 0 and 1 alike;
+//! * `support_ext_scan` + `support_le_2m_phy` + `support_le_coded_phy` —
+//!   extended scanning on *both* primary channel sets (1M and Coded), which
+//!   receives legacy, plain extended, and long-range coded advertisements,
+//!   so the node hears wire version 0 and 1 alike;
 //! * `support_ext_adv` + `adv_buffer_cfg(255)` — extended advertising for
 //!   *all* outgoing frames: version 0 as legacy-PDU extended adverts (still
-//!   heard by legacy-only scanners), version 1 as extended-PDU. Legacy
-//!   `support_adv` is deliberately absent — mixing legacy and extended HCI
-//!   commands (we scan with the extended set) is forbidden by the
-//!   controller and returns Command Disallowed.
+//!   heard by legacy-only scanners), version 1 as extended-PDU on the
+//!   **Coded (long-range, S=8) PHY**. Legacy `support_adv` is deliberately
+//!   absent — mixing legacy and extended HCI commands (we scan with the
+//!   extended set) is forbidden by the controller and returns Command
+//!   Disallowed.
 //!
 //! [`run`] drives three concerns forever:
 //!
@@ -30,7 +32,7 @@
 //!   extended advertising per frame by size, exactly as the desktop
 //!   Windows transport does.
 
-use bt_hci::param::LeExtAdvReportsIter;
+use bt_hci::param::{LeExtAdvReportsIter, PhyKind};
 use embassy_futures::select::{Either, select, select3};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{
@@ -47,7 +49,7 @@ use static_cell::StaticCell;
 use trouble_host::advertise::{
     AdStructure, Advertisement, AdvertisementParameters, AdvertisementSet,
 };
-use trouble_host::connection::ScanConfig;
+use trouble_host::connection::{PhySet, ScanConfig};
 use trouble_host::prelude::DefaultPacketPool;
 use trouble_host::scan::Scanner;
 use trouble_host::{Address, Host, HostResources};
@@ -152,9 +154,12 @@ pub fn init(
         .support_ext_adv()?
         // Extended scanning receives both legacy and extended
         // advertisements; the 2M PHY lets it follow ext-adv AUX packets
-        // (Windows places the data channel on 2M).
+        // (Windows places the data channel on 2M when not using coded).
         .support_ext_scan()?
         .support_le_2m_phy()?
+        // Coded (long-range, S=8) PHY: wire-version-1 frames are advertised
+        // on it, and the scanner listens on coded primaries (see `run`).
+        .support_le_coded_phy()?
         // The default adv buffer only holds a legacy 31-byte advertisement;
         // raise it so the controller can store a ~200-byte ext advert,
         // else LeSetExtAdvData fails with Memory Capacity Exceeded.
@@ -212,16 +217,19 @@ pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Addres
     let scan = async {
         let mut scanner = Scanner::new(central);
         // Passive scan (we never send scan requests); interval and window
-        // are left at trouble-host's defaults.
+        // are left at trouble-host's defaults. Scanning covers both primary
+        // channel sets — 1M (legacy + plain extended announcements) and
+        // Coded (long-range wire-version-1) — time-shared by the controller.
         let config = ScanConfig {
             active: false,
+            phys: PhySet::M1Coded,
             ..Default::default()
         };
         let _session = defmt::unwrap!(
             scanner.scan_ext(&config).await.map_err(|_| ()),
             "ext scan start"
         );
-        defmt::info!("ext-scanning for poholos frames");
+        defmt::info!("ext-scanning (1M + coded primaries) for poholos frames");
         core::future::pending::<()>().await
     };
 
@@ -289,7 +297,15 @@ pub async fn run(controller: sdc::SoftdeviceController<'static>, address: Addres
                         "ext frame + AD overhead fits the extended buffer"
                     );
                     let sets = [AdvertisementSet {
-                        params: AdvertisementParameters::default(),
+                        // Wire version 1 rides the Coded (long-range) PHY on
+                        // both hops; the SDC codes advertising at S=8. Only
+                        // coded-capable scanners receive these — v0 frames
+                        // (above) keep universal reach.
+                        params: AdvertisementParameters {
+                            primary_phy: PhyKind::LeCoded,
+                            secondary_phy: PhyKind::LeCoded,
+                            ..Default::default()
+                        },
                         data: Advertisement::ExtNonconnectableNonscannableUndirected {
                             adv_data: &adv_data[..len],
                             anonymous: false,

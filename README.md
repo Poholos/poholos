@@ -94,11 +94,14 @@ carry up to a 200-byte payload over BLE 5 extended advertising. The header
 layout is identical — only the permitted length differs — and `encode`
 picks the version by size: short messages stay version 0 (heard by every
 node, legacy included) and only long ones become version 1 (heard by
-extended-scan-capable nodes). Today Windows and the micro:bit *send*
-version 1 — Windows capped at ~156 bytes by the test adapter, the micro:bit
-the full ~200; extended-scan-capable nodes *receive* it, and the UDP test
-transport carries it in full. See *Platform notes* for what's validated
-where.
+extended-scan-capable nodes). Where the radio supports it, version 1 rides
+the **Coded (long-range, S=8) PHY** — the micro:bit always, Windows when
+the adapter can (verified per adapter at startup; otherwise plain extended
+advertising) — trading ~16× the airtime for roughly 4× the range. Today
+Windows and the micro:bit *send* version 1 — Windows capped at ~156 bytes
+by the test adapter (the cap is PHY-independent), the micro:bit the full
+~200; extended-scan-capable nodes *receive* it, and the UDP test transport
+carries it in full. See *Platform notes* for what's validated where.
 
 ## Library features
 
@@ -129,11 +132,19 @@ at 8 payload bytes and telegrams at 4.
 
 Windows and the micro:bit are **dual-stack**: each sends wire version 0 as
 a legacy advertisement (heard by every node) and oversized wire version 1
-via BLE 5 extended advertising, and each scans with extended scanning,
-which receives both. Windows TX is capped ~156 bytes by the test adapter;
-the micro:bit carries the full ~200. Linux (my test box is BLE 4.2-only)
-and macOS remain version-0 senders. Short messages stay version 0, so the
-mesh stays fully connected regardless of who speaks version 1.
+via BLE 5 extended advertising on the **Coded (long-range) PHY**, and each
+scans with extended scanning across both primary channel sets (1M and
+Coded), which receives everything. Windows TX is capped ~156 bytes by the
+test adapter (identical cap measured on 2M and Coded); the micro:bit
+carries the full ~200. Linux (my test box is BLE 4.2-only) and macOS
+remain version-0 senders. Short messages stay version 0, so the mesh stays
+fully connected regardless of who speaks version 1.
+
+Coded-PHY reception on Windows needs one line btleplug 0.12 lacks
+(`UseCodedPhy` on the WinRT watcher): the workspace pins a patched fork
+via `[patch.crates-io]` until the upstream fix
+([deviceplug/btleplug#463](https://github.com/deviceplug/btleplug/pull/463))
+ships in a release.
 
 ## Verifying a fresh checkout
 
@@ -164,11 +175,12 @@ micro:bit v2 (nRF52833, `thumbv7em-none-eabihf`), radio via the Nordic
 SoftDevice Controller + `trouble` (linked into the image — no separate
 SoftDevice flash), validated end-to-end against Windows and macOS desktop
 nodes, including a two-hop Mac → Windows → micro:bit relay.
-It scans continuously with **extended scanning** (so it hears both legacy
-and BLE 5 extended advertisements), relays with the same flood/TTL/dedup
-semantics and rotation airtime policy as the desktops, and is dual-stack:
-short frames go out as legacy advertisements, oversized (wire version 1)
-frames via extended advertising. Delivered messages scroll on the 5×5 LED
+It scans continuously with **extended scanning** on both the 1M and Coded
+primary channels (so it hears legacy, extended, and long-range coded
+advertisements alike), relays with the same flood/TTL/dedup semantics and
+rotation airtime policy as the desktops, and is dual-stack: short frames
+go out as legacy advertisements, oversized (wire version 1) frames via
+extended advertising on the **Coded (long-range, S=8) PHY**. Delivered messages scroll on the 5×5 LED
 matrix, each with a leading glyph for its kind — `*` for a broadcast, `@`
 (plus a chime on the onboard speaker) for a telegram addressed to it.
 It originates two canned messages:
@@ -203,7 +215,8 @@ cargo run -p poholos-cli -- --id alice-0001
 code keyed on the two buttons instead of canned messages — otherwise a full
 mesh node, identical on the radio: dual-stack across both wire versions like
 the canned firmware, so a short keyed message broadcasts as a legacy
-advertisement and a long one rides BLE 5 extended advertising. It builds on
+advertisement and a long one rides BLE 5 extended advertising on the
+long-range Coded PHY. It builds on
 `poholos-morse`, a small `no_std`, host-tested decoder that turns dot/dash
 elements plus pause boundaries into text.
 

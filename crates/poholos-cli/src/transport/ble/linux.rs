@@ -4,7 +4,6 @@
 //! Linux BLE advertising via BlueZ (`bluer`).
 //!
 //! BlueZ accepts the full 22-byte frame as manufacturer data.
-//! POC findings listed below:
 //!
 //! * `Type::Peripheral`, **not** `Type::Broadcast` - BlueZ silently drops
 //!   manufacturer data from broadcast-type advertisements.
