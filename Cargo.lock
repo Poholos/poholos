@@ -179,8 +179,7 @@ dependencies = [
 [[package]]
 name = "btleplug"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52c3264dbe2c8e29381e4e95aa2d2783ad0b9192b511240f3755b7e5e3cee87e"
+source = "git+https://github.com/userepo/btleplug.git?branch=coded-phy#4aa08267ffcfb5bc0b70eecceedf99d7a423812d"
 dependencies = [
  "async-trait",
  "bitflags",
@@ -948,7 +947,7 @@ dependencies = [
 
 [[package]]
 name = "poholos-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "ble-peripheral-rust",

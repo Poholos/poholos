@@ -3,8 +3,8 @@
 
 //! Windows BLE advertising via `BluetoothLEAdvertisementPublisher`.
 //!
-//! Windows 11 cannot act as a GATT peripheral from desktop apps (the
-//! spike consistently hit an HRESULT failure), but the advertising
+//! Windows 11 cannot act as a GATT peripheral from desktop apps (this
+//! consistently hits an HRESULT failure), but the advertising
 //! publisher with manufacturer data works fine. Windows is therefore
 //! central + broadcaster only, which is all poholos needs.
 //!
@@ -14,7 +14,10 @@
 //! scanners — can hear it; a larger (wire version 1) frame enables
 //! extended advertising (`SetUseExtendedAdvertisement`), which only
 //! extended-scan-capable nodes receive. The per-frame choice is what keeps
-//! the node dual-stack on air.
+//! the node dual-stack on air. Where the adapter and OS support it, wire
+//! version 1 additionally rides the **Coded (long-range) PHY** on both
+//! hops, matching the micro:bit firmware; otherwise it falls back to plain
+//! extended advertising.
 //!
 //! Replacing the frame means retiring the previous publisher and starting
 //! a fresh one carrying the new manufacturer-data section. `Stop()` is
@@ -26,8 +29,9 @@
 use anyhow::{Context, Result};
 use poholos::{COMPANY_ID, ExtFrame};
 use windows::Devices::Bluetooth::Advertisement::{
-    BluetoothLEAdvertisementPublisher, BluetoothLEManufacturerData,
+    BluetoothLEAdvertisementPhyType, BluetoothLEAdvertisementPublisher, BluetoothLEManufacturerData,
 };
+use windows::Devices::Bluetooth::BluetoothAdapter;
 use windows::Storage::Streams::DataWriter;
 
 /// Largest frame this adapter can put on air.
@@ -36,20 +40,25 @@ use windows::Storage::Streams::DataWriter;
 /// a legacy advertisement; extended advertising carries the rest. Extended
 /// TX is capped per adapter/driver, and above the cap WinRT aborts the
 /// advertisement *silently* (status `Aborted`, `error=0`) — so this budget
-/// is set to the largest payload the test adapter actually transmitted in
-/// the step-1 spike (156 bytes; 157 aborted). Frames above it fail the send
-/// with a clear message instead of vanishing on air. Adapters vary; raising
-/// this to the protocol ceiling awaits runtime cap detection.
+/// is set to the largest payload the test adapter actually transmitted
+/// (156 bytes; 157 aborted), measured identically on the 2M and Coded PHYs,
+/// so one budget covers both. Frames above it fail the send with a clear
+/// message instead of vanishing on air. Adapters vary; raising this to the
+/// protocol ceiling awaits runtime cap detection.
 pub const MAX_FRAME: usize = 156;
 
 /// WinRT-backed advertiser holding the publisher currently on air.
 #[derive(Debug)]
 pub struct Advertiser {
     current: Option<BluetoothLEAdvertisementPublisher>,
+    /// Wire-version-1 frames ride the Coded (long-range) PHY when the
+    /// adapter and OS both support it; detected once at startup.
+    coded: bool,
 }
 
 impl Advertiser {
-    /// Probes that WinRT advertising is available (idle until the first frame).
+    /// Probes that WinRT advertising is available (idle until the first
+    /// frame) and whether the radio can transmit on the Coded PHY.
     ///
     /// # Errors
     /// Fails if WinRT cannot construct a publisher, e.g. no radio.
@@ -60,9 +69,26 @@ impl Advertiser {
     pub async fn new() -> Result<Self> {
         // Fail at startup rather than on the first send if advertising is
         // unavailable; the probe publisher is never started.
-        let _probe = BluetoothLEAdvertisementPublisher::new()
+        let probe = BluetoothLEAdvertisementPublisher::new()
             .context("creating BluetoothLEAdvertisementPublisher")?;
-        Ok(Self { current: None })
+
+        // Coded TX needs both the adapter capability and the PHY-selection
+        // API (newer Windows 11 builds) — probe both; the property set on
+        // the never-started probe publisher is side-effect free. Any
+        // failure means v1 frames fall back to plain extended advertising.
+        let coded = BluetoothAdapter::GetDefaultAsync()
+            .and_then(|op| op.join())
+            .and_then(|adapter| adapter.IsLowEnergyCodedPhySupported())
+            .unwrap_or(false)
+            && probe.SetUseExtendedAdvertisement(true).is_ok()
+            && probe
+                .SetPrimaryPhy(BluetoothLEAdvertisementPhyType::CodedPhy)
+                .is_ok();
+
+        Ok(Self {
+            current: None,
+            coded,
+        })
     }
 
     /// Replaces the advertisement on air with `frame`.
@@ -87,9 +113,21 @@ impl Advertiser {
         // Legacy frames stay on legacy advertisements (universal reach);
         // only oversized wire-version-1 frames switch to extended
         // advertising, which legacy-only scanners do not receive.
+        let extended = frame.len() > poholos::MAX_FRAME_LEN;
         publisher
-            .SetUseExtendedAdvertisement(frame.len() > poholos::MAX_FRAME_LEN)
+            .SetUseExtendedAdvertisement(extended)
             .context("selecting extended advertising")?;
+        if extended && self.coded {
+            // Long-range: both hops on the Coded PHY (the coding rate is
+            // the controller's choice — WinRT has no S=2/S=8 knob). The
+            // adapter's TX size cap is PHY-independent (see [`MAX_FRAME`]).
+            publisher
+                .SetPrimaryPhy(BluetoothLEAdvertisementPhyType::CodedPhy)
+                .context("selecting coded primary PHY")?;
+            publisher
+                .SetSecondaryPhy(BluetoothLEAdvertisementPhyType::CodedPhy)
+                .context("selecting coded secondary PHY")?;
+        }
 
         let sections = publisher
             .Advertisement()

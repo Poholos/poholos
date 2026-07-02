@@ -81,8 +81,8 @@ pub const MAX_FRAME_LEN: usize = 22;
 /// Sized so both packet shapes carry a 200-byte payload over BLE 5 extended
 /// advertising: `211` = the 11-byte telegram header + 200. Hearsay frames,
 /// with the shorter header, reach 204 payload bytes. Individual adapters may
-/// cap their actual TX below this (one Windows adapter measured 156 in the
-/// step-1 spike); that is a transport-layer concern, not a wire limit.
+/// cap their actual TX below this (one Windows adapter measured 156); that
+/// is a transport-layer concern, not a wire limit.
 pub const MAX_EXT_FRAME_LEN: usize = HEADER_LEN_TELEGRAM + 200;
 
 /// Header length of a hearsay (broadcast) frame: flags + seq + src.

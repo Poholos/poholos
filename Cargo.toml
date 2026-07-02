@@ -5,8 +5,15 @@ members = ["crates/poholos", "crates/poholos-cli", "crates/poholos-morse"]
 # bare-metal target and must not join the host workspace build.
 exclude = ["crates/poholos-microbit", "crates/poholos-microbit-morse"]
 
+# The fork's `coded-phy` branch is stock 0.12.0 plus one line: the WinRT
+# watcher also sets `UseCodedPhy(true)` (error-ignored, like the extended
+# flag beside it), so the Windows scanner receives coded-primary (long
+# range) BLE 5 advertisements. Drop this once upstream ships the change.
+[patch.crates-io]
+btleplug = { git = "https://github.com/userepo/btleplug.git", branch = "coded-phy" }
+
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.95"
 # Default for the workspace's app crates; the `poholos` core overrides this to
