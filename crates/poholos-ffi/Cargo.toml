@@ -1,0 +1,24 @@
+[package]
+name = "poholos-ffi"
+description = "C ABI for the poholos routing engine (Swift/iOS embedding)."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Follows the protocol core, not the workspace's AGPL app default: the FFI
+# layer is part of the embeddable engine (see LICENSING.md).
+license = "MIT OR Apache-2.0"
+homepage.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# `staticlib` is the artifact iOS links against; `rlib` keeps the crate
+# testable and usable from Rust.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+poholos = { path = "../poholos", features = ["std"] }
+
+[lints]
+workspace = true

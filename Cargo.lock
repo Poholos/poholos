@@ -966,6 +966,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "poholos-ffi"
+version = "0.3.0"
+dependencies = [
+ "poholos",
+]
+
+[[package]]
 name = "poholos-morse"
 version = "0.1.0"
 dependencies = [
