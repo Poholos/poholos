@@ -3,7 +3,11 @@ resolver = "3"
 members = ["crates/poholos", "crates/poholos-cli", "crates/poholos-morse"]
 # The firmware crates are their own workspaces: they cross-compile for a
 # bare-metal target and must not join the host workspace build.
-exclude = ["crates/poholos-microbit", "crates/poholos-microbit-morse"]
+exclude = [
+    "crates/poholos-microbit",
+    "crates/poholos-microbit-morse",
+    "crates/poholos-esp32c6",
+]
 
 # The fork's `coded-phy` branch is stock 0.12.0 plus one line: the WinRT
 # watcher also sets `UseCodedPhy(true)` (error-ignored, like the extended

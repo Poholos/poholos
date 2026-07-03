@@ -24,8 +24,10 @@ crates/
 ├── poholos-morse            # no_std morse-code composer: dot/dash -> text
 ├── poholos-microbit         # micro:bit v2 mesh-node firmware (Embassy; own
 │                            # workspace, validated end-to-end on hardware)
-└── poholos-microbit-morse   # micro:bit v2 morse-input node (Embassy; own
-                             # workspace, validated end-to-end on hardware)
+├── poholos-microbit-morse   # micro:bit v2 morse-input node (Embassy; own
+│                            # workspace, validated end-to-end on hardware)
+└── poholos-esp32c6          # ESP32-C6 mesh-node firmware with SSD1306 OLED
+                             # (Embassy; own workspace, pending hardware)
 ```
 
 The core library never touches a socket or a radio. The router is a pure
@@ -161,6 +163,9 @@ cargo build -p poholos --no-default-features --target thumbv7em-none-eabihf
 # its .cargo/config.toml target settings apply):
 (cd crates/poholos-microbit && cargo build --release)
 (cd crates/poholos-microbit-morse && cargo build --release)
+
+# ESP32-C6 firmware (rustup target add riscv32imac-unknown-none-elf):
+(cd crates/poholos-esp32c6 && cargo build --release)
 ```
 
 The Linux, Windows, and macOS advertisers, the btleplug scanner (both
@@ -242,6 +247,33 @@ log. Build and flash exactly like the canned firmware:
 cd crates/poholos-microbit-morse
 cargo run --release
 ```
+
+## ESP32-C6 firmware
+
+`crates/poholos-esp32c6` is an Embassy-based full mesh node for the
+ESP32-C6-DevKitC-1 (RISC-V, `riscv32imac-unknown-none-elf`, stable Rust),
+radio via Espressif's BLE controller driven over HCI (`esp-radio` +
+`trouble` — the same host stack as the micro:bit). Same dual-stack radio
+behavior: extended scanning on the 1M and Coded primaries, short frames as
+legacy advertisements, wire-version-1 frames over Coded-PHY extended
+advertising. Delivered messages appear on an **SSD1306 128×64 OLED**
+(I2C: SDA = GPIO6, SCL = GPIO7; the node runs headless without it) as a
+five-line scrollback under a header showing the node's `esp-xxxx` address
+(derived from the factory MAC — `@esp-xxxx` reaches it). The **BOOT
+button** broadcasts a canned long status message sized to ride wire
+version 1.
+
+```sh
+cargo install espflash                 # once; flashes over native USB-JTAG
+rustup target add riscv32imac-unknown-none-elf   # once
+cd crates/poholos-esp32c6
+cargo run --release                    # flash + tail the log
+```
+
+**Status: builds; not yet validated on hardware.** In particular, whether
+this controller accepts the extended-advertising and Coded-PHY HCI
+parameters end-to-end is unproven until a board is on the bench — radio
+failures log and degrade rather than crash the node.
 
 ## License
 

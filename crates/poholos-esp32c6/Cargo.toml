@@ -1,0 +1,61 @@
+[package]
+name = "poholos-esp32c6"
+description = "Poholos mesh-node firmware for the ESP32-C6-DevKitC-1 with SSD1306 OLED."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "AGPL-3.0-only"
+publish = false
+
+# Standalone workspace: cross-compiles for riscv32imac-unknown-none-elf (see
+# .cargo/config.toml), kept out of the host workspace build.
+[workspace]
+
+[dependencies]
+poholos = { path = "../poholos", default-features = false }
+
+# esp-hal stack. esp-radio 0.18 and trouble-host 0.6 both speak bt-hci 0.8,
+# which is what makes this version set hang together.
+esp-hal = { version = "1.1.0", features = ["esp32c6", "unstable"] }
+esp-alloc = "0.10.0"
+esp-backtrace = { version = "0.19.0", features = ["esp32c6", "panic-handler", "println"] }
+esp-println = { version = "0.17.0", features = ["esp32c6", "log-04"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32c6"] }
+esp-radio = { version = "0.18.0", features = ["esp32c6", "ble", "log-04", "unstable"] }
+esp-rtos = { version = "0.3.0", features = ["esp32c6", "embassy", "esp-alloc", "esp-radio", "log-04"] }
+
+embassy-executor = "0.10.0"
+embassy-time = "0.5"
+embassy-sync = "0.7"
+embassy-futures = "0.1"
+
+# BLE host; the packet pool must hold a full extended advertising report.
+trouble-host = { version = "0.6.0", default-features = false, features = [
+    "peripheral",
+    "central",
+    "scan",
+    "default-packet-pool-mtu-255",
+    "log",
+] }
+bt-hci = { version = "0.8", default-features = false }
+
+# SSD1306 128x64 OLED over I2C.
+ssd1306 = { version = "0.10", features = ["async"] }
+embedded-graphics = "0.8"
+
+log = "0.4"
+heapless = "0.9"
+static_cell = "2"
+
+[profile.release]
+debug = 2
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+debug = 2
+opt-level = 1
+# The radio blob is unusable below opt-level 2.
+[profile.dev.package.esp-radio]
+opt-level = 3
