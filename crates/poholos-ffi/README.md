@@ -29,12 +29,17 @@ without a bridging header):
 
 ```sh
 # one-time prerequisites
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim \
+    aarch64-apple-darwin x86_64-apple-darwin
 cargo install cbindgen
 
 crates/poholos-ffi/build-xcframework.sh
 # -> target/xcframework/PoholosFFI.xcframework
 ```
+
+The framework carries device, simulator, and universal-Mac slices; the Mac
+slice is what lets the Swift package's tests and CLI monitor run on the
+development machine.
 
 Everything lands under the cargo target directory; nothing is written into
 the source tree. The C header is generated on demand by `cbindgen` (see

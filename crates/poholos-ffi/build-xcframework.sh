@@ -12,7 +12,8 @@
 #     target/xcframework/PoholosFFI.xcframework
 #
 # Prerequisites (one-time):
-#     rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+#     rustup target add aarch64-apple-ios aarch64-apple-ios-sim \
+#         aarch64-apple-darwin x86_64-apple-darwin
 #     cargo install cbindgen
 # plus Xcode for xcodebuild.
 
@@ -27,7 +28,8 @@ for tool in cargo cbindgen xcodebuild; do
     }
 done
 
-for target in aarch64-apple-ios aarch64-apple-ios-sim; do
+for target in aarch64-apple-ios aarch64-apple-ios-sim \
+    aarch64-apple-darwin x86_64-apple-darwin; do
     rustup target list --installed | grep -qx "$target" || {
         echo "error: rust target $target not installed; run: rustup target add $target" >&2
         exit 1
@@ -41,13 +43,10 @@ OUT_DIR="$TARGET_DIR/xcframework"
 INCLUDE_DIR="$OUT_DIR/include"
 XCFRAMEWORK="$OUT_DIR/PoholosFFI.xcframework"
 
-# The host triple (aarch64- or x86_64-apple-darwin) is always installed,
-# so the Mac slice needs no extra rustup target.
-HOST="$(rustc -vV | sed -n 's/^host: //p')"
-
 cargo build -p poholos-ffi --release --target aarch64-apple-ios
 cargo build -p poholos-ffi --release --target aarch64-apple-ios-sim
-cargo build -p poholos-ffi --release --target "$HOST"
+cargo build -p poholos-ffi --release --target aarch64-apple-darwin
+cargo build -p poholos-ffi --release --target x86_64-apple-darwin
 
 # The headers directory becomes the Headers/ of each slice; the module
 # map beside the header is what lets Swift `import PoholosFFI`.
@@ -56,12 +55,21 @@ mkdir -p "$INCLUDE_DIR"
 (cd "$CRATE_DIR" && cbindgen --crate poholos-ffi --output "$INCLUDE_DIR/poholos_ffi.h")
 cp "$CRATE_DIR/module.modulemap" "$INCLUDE_DIR/"
 
+# The Mac slice is universal: Swift builds for the machine's real
+# architecture, which need not match the Rust toolchain's host (an
+# x86_64 rustup under Rosetta on an arm64 Mac is common), so a
+# single-arch slice risks being silently skipped by SPM.
+lipo -create \
+    "$TARGET_DIR/aarch64-apple-darwin/release/libpoholos_ffi.a" \
+    "$TARGET_DIR/x86_64-apple-darwin/release/libpoholos_ffi.a" \
+    -output "$OUT_DIR/libpoholos_ffi_macos.a"
+
 # xcodebuild refuses to overwrite an existing framework.
 rm -rf "$XCFRAMEWORK"
 xcodebuild -create-xcframework \
     -library "$TARGET_DIR/aarch64-apple-ios/release/libpoholos_ffi.a" -headers "$INCLUDE_DIR" \
     -library "$TARGET_DIR/aarch64-apple-ios-sim/release/libpoholos_ffi.a" -headers "$INCLUDE_DIR" \
-    -library "$TARGET_DIR/$HOST/release/libpoholos_ffi.a" -headers "$INCLUDE_DIR" \
+    -library "$OUT_DIR/libpoholos_ffi_macos.a" -headers "$INCLUDE_DIR" \
     -output "$XCFRAMEWORK"
 
 echo "wrote $XCFRAMEWORK"
