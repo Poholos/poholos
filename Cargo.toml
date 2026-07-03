@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/poholos", "crates/poholos-cli", "crates/poholos-morse"]
+members = [
+    "crates/poholos",
+    "crates/poholos-cli",
+    "crates/poholos-ffi",
+    "crates/poholos-morse",
+]
 # The firmware crates are their own workspaces: they cross-compile for a
 # bare-metal target and must not join the host workspace build.
 exclude = ["crates/poholos-microbit", "crates/poholos-microbit-morse"]
