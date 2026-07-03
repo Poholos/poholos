@@ -22,22 +22,24 @@ relay bytes; a future relaying node uses the same surface unchanged.
 ## Building for iOS
 
 The crate is a normal workspace member and builds on any host (`cargo test`
-works without any Apple tooling). For the app, build the static library for
-device and simulator and bundle an XCFramework:
+works without any Apple tooling). For the app, [build-xcframework.sh](build-xcframework.sh)
+builds the static library for device and simulator, generates the C header,
+and bundles both with the Clang module map (so Swift can `import PoholosFFI`
+without a bridging header):
 
 ```sh
+# one-time prerequisites
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-cargo build -p poholos-ffi --release --target aarch64-apple-ios
-cargo build -p poholos-ffi --release --target aarch64-apple-ios-sim
-cbindgen --crate poholos-ffi --output include/poholos_ffi.h
-xcodebuild -create-xcframework \
-    -library ../../target/aarch64-apple-ios/release/libpoholos_ffi.a -headers include \
-    -library ../../target/aarch64-apple-ios-sim/release/libpoholos_ffi.a -headers include \
-    -output PoholosFFI.xcframework
+cargo install cbindgen
+
+crates/poholos-ffi/build-xcframework.sh
+# -> target/xcframework/PoholosFFI.xcframework
 ```
 
-The C header is generated on demand by `cbindgen` (see `cbindgen.toml`), not
-by a `build.rs`, so plain cargo builds never need it installed.
+Everything lands under the cargo target directory; nothing is written into
+the source tree. The C header is generated on demand by `cbindgen` (see
+`cbindgen.toml`), not by a `build.rs`, so plain cargo builds never need it
+installed.
 
 ## License
 
