@@ -56,8 +56,17 @@ pub const POHOLOS_MAX_FRAME_LEN: usize = 211;
 /// header, stay strictly below it.
 pub const POHOLOS_MAX_PAYLOAD_LEN: usize = 204;
 
+/// Bluetooth manufacturer-specific-data company identifier for poholos
+/// ([`poholos::COMPANY_ID`]).
+///
+/// Scanners filter advertisements on this id (little-endian on the air,
+/// per the Bluetooth specification) and feed the bytes that follow it to
+/// [`poholos_router_ingest`].
+pub const POHOLOS_COMPANY_ID: u16 = 0xF10C;
+
 const _: () = assert!(POHOLOS_MAX_FRAME_LEN == poholos::MAX_EXT_FRAME_LEN);
 const _: () = assert!(POHOLOS_MAX_PAYLOAD_LEN == poholos::MAX_EXT_PAYLOAD_HEARSAY);
+const _: () = assert!(POHOLOS_COMPANY_ID == poholos::COMPANY_ID);
 
 /// Result of a call that crosses the FFI boundary.
 #[repr(u8)]
