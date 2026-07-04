@@ -69,9 +69,12 @@ scanner.onEvent = { event in
     }
 }
 
-// First frame of each distinct undecodable length: the signal the
-// ext-adv POC transmitter produces (its payload is not a poholos frame).
+// Undecodable frames repeat continuously (no seen-cache), so print one
+// line per distinct length: the signal the ext-adv POC transmitter
+// produces (its payload is deliberately not a poholos frame).
+var reportedUndecodableLengths = Set<Int>()
 scanner.onUndecodableFrame = { length, rssi in
+    guard reportedUndecodableLengths.insert(length).inserted else { return }
     print("? \(length)-byte undecodable frame under company id f10c (\(rssi) dBm)")
 }
 

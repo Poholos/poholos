@@ -12,14 +12,16 @@ this app's job.
 ## Layout
 
 - `Sources/PoholosKit/` — the Swift face of the engine (`Router`,
-  `RouteAction`, `WireID`), the CoreBluetooth scanner (`MeshScanner`), and
-  the device identity (`NodeIdentity`, e.g. `iphone-3f2a`). Compiles for iOS
-  **and** macOS.
+  `RouteAction`, `WireID`), the CoreBluetooth scanner (`MeshScanner`), the
+  device identity (`NodeIdentity`, e.g. `iph-3f2a`), and the UI: the
+  aggregation model (`MonitorModel` — feed, per-source stats, traffic
+  counters; unit-tested with synthetic events) and the feed + diagnostics
+  screens. Compiles for iOS **and** macOS.
 - `Sources/poholos-monitor/` — a terminal monitor for the Mac: the same
   pipeline printing a live feed, so scanner → engine → formatting is
   debuggable against the real mesh without provisioning a phone.
-- `PoholosMonitor/` + `PoholosMonitor.xcodeproj` — the iOS app (a
-  placeholder feed screen until the real UI lands).
+- `PoholosMonitor/` + `PoholosMonitor.xcodeproj` — the iOS app; just the
+  `@main` entry point, everything else comes from the package.
 - `Frameworks/` *(gitignored)* — `PoholosFFI.xcframework`, installed by
   `refresh-ffi.sh`.
 
