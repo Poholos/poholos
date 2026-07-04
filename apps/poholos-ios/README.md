@@ -75,6 +75,14 @@ description set via build settings (no checked-in Info.plist).
   bytes** via this package's own scanner. Conclusion: the flag describes
   OS-internal capability, not what CoreBluetooth passes to apps —
   iPhones are v0-only mesh participants.
+- ❌ **Coded PHY is not received on macOS either.** The same transmitter
+  switched to coded primary + secondary (the POC's default) never
+  appears, while its 1M + 2M shape does. CoreBluetooth exposes no
+  coded-scan option on any platform, so long-range coded frames remain
+  the domain of the patched-btleplug desktops and the micro:bits.
+
+In short: Apple platforms receive **v0 everywhere**; **v1 on macOS only**
+(standard PHYs); **Coded nowhere**.
 
 ## License
 
