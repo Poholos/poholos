@@ -39,7 +39,11 @@ struct FeedView: View {
                 emptyState
             } else {
                 List(model.feed) { entry in
-                    FeedRow(entry: entry)
+                    NavigationLink {
+                        MessageDetailView(entry: entry)
+                    } label: {
+                        FeedRow(entry: entry)
+                    }
                 }
                 .listStyle(.plain)
             }
@@ -123,6 +127,62 @@ struct FeedRow: View {
         case .passingThrough: .secondary
         case .undecodable: .secondary
         }
+    }
+}
+
+/// Everything the monitor knows about one feed entry: the full text,
+/// routing fields, radio measurements, and the raw bytes.
+struct MessageDetailView: View {
+    let entry: FeedEntry
+
+    var body: some View {
+        List {
+            Section(entry.message == nil ? "Frame" : "Message") {
+                Text(entry.text)
+                    .font(entry.message == nil ? .callout.italic() : .body)
+                    .textSelection(.enabled)
+            }
+            if let message = entry.message {
+                Section {
+                    LabeledContent("Source", value: "\(message.src)")
+                    LabeledContent("Destination", value: entry.destLabel ?? "?")
+                    LabeledContent("Sequence", value: "\(message.seq)")
+                    LabeledContent("TTL", value: "\(message.ttl)")
+                } header: {
+                    Text("Route")
+                } footer: {
+                    Text(
+                        "New packets start at TTL 16 by default; each relay "
+                            + "hop consumes one, so 16 usually means heard directly."
+                    )
+                }
+            }
+            Section("Radio") {
+                LabeledContent("Received") {
+                    Text(
+                        entry.receivedAt,
+                        format: .dateTime.year().month().day().hour().minute().second()
+                    )
+                }
+                LabeledContent("Signal", value: "\(entry.rssi) dBm")
+                LabeledContent(
+                    "Wire version", value: entry.isExtended ? "v1 (extended)" : "v0 (legacy)")
+                LabeledContent("Frame length", value: "\(entry.frameLength) bytes")
+            }
+            if let bytes = entry.message?.payload ?? entry.rawFrame, !bytes.isEmpty {
+                Section(entry.message == nil ? "Frame bytes" : "Payload bytes") {
+                    Text(hexDump(bytes))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .navigationTitle(entry.message == nil ? "Undecodable frame" : "Message")
+        .inlineNavigationTitle()
+    }
+
+    private func hexDump(_ bytes: Data) -> String {
+        bytes.map { String(format: "%02x", $0) }.joined(separator: " ")
     }
 }
 

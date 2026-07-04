@@ -44,6 +44,10 @@ final class MonitorModelTests: XCTestCase {
         XCTAssertEqual(entry.text, "hello")
         XCTAssertEqual(entry.rssi, -48)
         XCTAssertFalse(entry.isExtended)
+        XCTAssertEqual(entry.frameLength, 22)
+        XCTAssertEqual(
+            entry.message, message(src: alice, text: "hello"),
+            "full message kept for the details screen")
         XCTAssertEqual(model.messagesDelivered, 1)
 
         let stats = try XCTUnwrap(model.sources[alice])
@@ -88,9 +92,10 @@ final class MonitorModelTests: XCTestCase {
 
     func testUndecodableFramesCountAllButFeedOncePerLength() throws {
         let model = makeModel()
-        model.handleUndecodable(length: 200, rssi: -60)
-        model.handleUndecodable(length: 200, rssi: -61)
-        model.handleUndecodable(length: 10, rssi: -62)
+        let big = Data(0..<200)
+        model.handleUndecodable(frame: big, rssi: -60)
+        model.handleUndecodable(frame: big, rssi: -61)
+        model.handleUndecodable(frame: Data(repeating: 0xEE, count: 10), rssi: -62)
 
         XCTAssertEqual(model.undecodableFrames, 3)
         XCTAssertEqual(model.undecodableLengths, [200, 10])
@@ -98,6 +103,8 @@ final class MonitorModelTests: XCTestCase {
         XCTAssertEqual(model.feed.map(\.kind), [.undecodable, .undecodable])
         XCTAssertTrue(model.feed[1].isExtended, "200-byte frame is beyond the legacy budget")
         XCTAssertFalse(model.feed[0].isExtended)
+        XCTAssertEqual(model.feed[1].rawFrame, big, "raw bytes kept for the details screen")
+        XCTAssertNil(model.feed[1].message)
     }
 
     func testFeedIsCappedNewestFirst() throws {

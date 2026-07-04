@@ -28,16 +28,27 @@ public struct FeedEntry: Identifiable, Equatable {
     public let id = UUID()
     public let receivedAt: Date
     public let kind: Kind
-    /// Originating node; nil for undecodable frames.
-    public let src: WireID?
+    /// The decoded message; nil for undecodable frames.
+    public let message: MeshMessage?
+    /// The raw bytes of an undecodable frame; nil for decoded messages.
+    public let rawFrame: Data?
     /// `all`, `you`, or the destination's 8-hex id; nil for undecodable.
     public let destLabel: String?
-    /// Message text, or a description for undecodable frames.
-    public let text: String
     /// Received signal strength in dBm.
     public let rssi: Int
+    /// On-air frame length in bytes.
+    public let frameLength: Int
+
+    /// Originating node; nil for undecodable frames.
+    public var src: WireID? { message?.src }
+
+    /// Message text, or a description for undecodable frames.
+    public var text: String {
+        message?.text ?? "\(frameLength)-byte undecodable frame under 0xF10C"
+    }
+
     /// True for a frame beyond the legacy 22-byte budget (wire v1).
-    public let isExtended: Bool
+    public var isExtended: Bool { frameLength > 22 }
 
     /// The line's feed marker: `*` / `@` / `~` / `?`.
     public var marker: String {
@@ -112,8 +123,8 @@ public final class MonitorModel: ObservableObject {
         scanner?.onEvent = { [weak self] event in
             Task { @MainActor in self?.handle(event: event) }
         }
-        scanner?.onUndecodableFrame = { [weak self] length, rssi in
-            Task { @MainActor in self?.handleUndecodable(length: length, rssi: rssi) }
+        scanner?.onUndecodableFrame = { [weak self] frame, rssi in
+            Task { @MainActor in self?.handleUndecodable(frame: frame, rssi: rssi) }
         }
         scanner?.onStateChange = { [weak self] state in
             Task { @MainActor in self?.handleState(state) }
@@ -158,19 +169,19 @@ public final class MonitorModel: ObservableObject {
     /// Counts an ours-but-undecodable frame; the first of each distinct
     /// length also gets a feed line (they repeat continuously and have
     /// no seen-cache, so per-frame lines would flood the feed).
-    public func handleUndecodable(length: Int, rssi: Int) {
+    public func handleUndecodable(frame: Data, rssi: Int) {
         undecodableFrames += 1
-        guard !undecodableLengths.contains(length) else { return }
-        undecodableLengths.append(length)
+        guard !undecodableLengths.contains(frame.count) else { return }
+        undecodableLengths.append(frame.count)
         append(
             FeedEntry(
                 receivedAt: Date(),
                 kind: .undecodable,
-                src: nil,
+                message: nil,
+                rawFrame: Data(frame),
                 destLabel: nil,
-                text: "\(length)-byte undecodable frame under 0xF10C",
                 rssi: rssi,
-                isExtended: length > 22
+                frameLength: frame.count
             ))
     }
 
@@ -189,11 +200,11 @@ public final class MonitorModel: ObservableObject {
         FeedEntry(
             receivedAt: event.receivedAt,
             kind: kind,
-            src: message.src,
+            message: message,
+            rawFrame: nil,
             destLabel: destLabel(for: message.dest),
-            text: message.text,
             rssi: event.rssi,
-            isExtended: event.isExtended
+            frameLength: event.frameLength
         )
     }
 
