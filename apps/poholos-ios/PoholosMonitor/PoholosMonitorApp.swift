@@ -62,7 +62,20 @@ final class FeedModel: ObservableObject {
 
         let localID = scanner.router.localID
         scanner.onStateChange = { [weak self] state in
-            let text = state == .poweredOn ? "scanning as \(localID)" : "bluetooth unavailable"
+            // The wire-v1 platform question, displayed where the
+            // validation runs happen: does this device's CoreBluetooth
+            // claim BLE 5 extended-scan support? Queried at powered-on,
+            // when the answer is authoritative — the API is unreliable
+            // before Bluetooth is up and authorized.
+            let extendedScan =
+                switch MeshScanner.supportsExtendedScan {
+                case true?: "ext-scan: yes"
+                case false?: "ext-scan: NO"
+                case nil: "ext-scan: n/a"
+                }
+            let text =
+                state == .poweredOn
+                ? "scanning as \(localID) · \(extendedScan)" : "bluetooth unavailable"
             Task { @MainActor in self?.status = text }
         }
         scanner.onEvent = { [weak self] event in

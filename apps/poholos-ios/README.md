@@ -57,6 +57,25 @@ simulator has no Bluetooth, so the feed only moves on hardware or the Mac.
 Bundle id `com.poholos.monitor`, deployment target iOS 16, Bluetooth usage
 description set via build settings (no checked-in Info.plist).
 
+## Hardware validation results (2026-07-03, iPhone 15 Pro, iOS 26.5)
+
+- ✅ **v0 RX from every sender class** — Windows CLI, macOS CLI, and
+  micro:bit legacy-PDU frames all appear in the feed; one line per message
+  despite continuously repeating advertisers (engine dedup working).
+- ✅ **Telegram detection** — `@iph-xxxx …` renders as `@ … → you`.
+- ✅ **Background scan stops** (measured, as expected): no service UUID to
+  filter on means iOS delivers nothing to a backgrounded app — the
+  empirical premise for the service-UUID-in-wire-v1 idea.
+- ❌ **Wire v1 / extended advertising is not received on iPhone.**
+  `CBCentralManager.supports(.extendedScanAndConnect)` reports **true**
+  (when queried at powered-on; earlier it reads false — query timing
+  matters), yet a 200-byte extended advertisement (1M primary + 2M
+  secondary, from the `poc/ext-adv` micro:bit transmitter) never reaches
+  `didDiscover`, while **macOS on the same desk surfaces the full 200
+  bytes** via this package's own scanner. Conclusion: the flag describes
+  OS-internal capability, not what CoreBluetooth passes to apps —
+  iPhones are v0-only mesh participants.
+
 ## License
 
 AGPL-3.0-only, like the other poholos applications (see
