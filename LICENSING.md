@@ -2,9 +2,10 @@
 
 poholos is split-licensed by component.
 
-## Open core — `crates/poholos`
+## Open core — `crates/poholos`, `crates/poholos-ffi`
 
-The poholos protocol core library is dual-licensed under either of
+The poholos protocol core library, and the `poholos-ffi` C ABI that embeds
+it in non-Rust hosts, are dual-licensed under either of
 
 - Apache License, Version 2.0
   ([crates/poholos/LICENSE-APACHE](crates/poholos/LICENSE-APACHE))
@@ -14,9 +15,10 @@ The poholos protocol core library is dual-licensed under either of
 at your option. You may use the `poholos` crate under the terms of either
 license.
 
-## Applications — `crates/poholos-cli`, `crates/poholos-microbit`
+## Applications — `crates/poholos-cli`, `crates/poholos-microbit`, `apps/poholos-ios`
 
-The console application and the micro:bit firmware are licensed under the
+The console application, the micro:bit firmware, and the iOS monitor app
+are licensed under the
 **GNU Affero General Public License, version 3.0 only** (`AGPL-3.0-only`);
 the full text is in [LICENSE](LICENSE). In particular, the AGPL's network-use
 clause applies: if you run a modified version and let users interact with it
