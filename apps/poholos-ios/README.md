@@ -1,0 +1,63 @@
+# poholos-ios — mesh monitor
+
+A receive-only iOS monitor ("mesh pager") for the poholos mesh: it scans BLE
+advertisements for poholos frames and runs them through the actual Rust
+routing engine (via [`poholos-ffi`](../../crates/poholos-ffi)), so duplicate
+suppression and delivery semantics are exactly those of every other node.
+
+Foreground-only by design for v1: without a service UUID to filter on, iOS
+stops undirected scans in the background — measuring that behavior is part of
+this app's job.
+
+## Layout
+
+- `Sources/PoholosKit/` — the Swift face of the engine (`Router`,
+  `RouteAction`, `WireID`), the CoreBluetooth scanner (`MeshScanner`), and
+  the device identity (`NodeIdentity`, e.g. `iphone-3f2a`). Compiles for iOS
+  **and** macOS.
+- `Sources/poholos-monitor/` — a terminal monitor for the Mac: the same
+  pipeline printing a live feed, so scanner → engine → formatting is
+  debuggable against the real mesh without provisioning a phone.
+- `PoholosMonitor/` + `PoholosMonitor.xcodeproj` — the iOS app (a
+  placeholder feed screen until the real UI lands).
+- `Frameworks/` *(gitignored)* — `PoholosFFI.xcframework`, installed by
+  `refresh-ffi.sh`.
+
+## Getting started
+
+```sh
+# one-time: Rust targets + header generator (plus Xcode)
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim \
+    aarch64-apple-darwin x86_64-apple-darwin
+cargo install cbindgen
+
+./refresh-ffi.sh     # build the Rust engine, install the XCFramework
+swift test           # wrapper tests against the real engine, on the Mac
+swift run poholos-monitor   # live mesh feed in the terminal
+```
+
+`refresh-ffi.sh` must be re-run after any change on the Rust side. On first
+`swift run`, macOS asks for Bluetooth access on behalf of your terminal
+(System Settings > Privacy & Security > Bluetooth).
+
+The monitor takes an optional node name and `--verbose` (also prints ignored
+frames — duplicates being most mesh traffic):
+
+```sh
+swift run poholos-monitor mac-3f2a --verbose
+```
+
+## The iOS app
+
+Open `PoholosMonitor.xcodeproj` in Xcode and run. For a physical iPhone,
+set your development team under Signing & Capabilities (a free Apple ID
+suffices for sideloading); the simulator needs no signing — but note the
+simulator has no Bluetooth, so the feed only moves on hardware or the Mac.
+
+Bundle id `com.poholos.monitor`, deployment target iOS 16, Bluetooth usage
+description set via build settings (no checked-in Info.plist).
+
+## License
+
+AGPL-3.0-only, like the other poholos applications (see
+[LICENSING.md](../../LICENSING.md)). The engine it embeds stays MIT/Apache.
