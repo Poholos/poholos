@@ -67,17 +67,27 @@ final class FeedModel: ObservableObject {
         }
         scanner.onEvent = { [weak self] event in
             guard let text = Self.line(for: event, localID: localID) else { return }
+            Task { @MainActor in self?.append(text) }
+        }
+        // The platform-validation signal: the ext-adv POC transmitter is
+        // not a poholos frame, so it surfaces here — the length tells
+        // whether iOS exposed the full extended payload.
+        scanner.onUndecodableFrame = { [weak self] length, rssi in
             Task { @MainActor in
-                self?.lines.insert(Line(text: text), at: 0)
-                // Placeholder cap; the real feed store arrives with the UI.
-                if let count = self?.lines.count, count > 200 {
-                    self?.lines.removeLast()
-                }
+                self?.append("? \(length)-byte undecodable frame under 0xF10C (\(rssi) dBm)")
             }
         }
 
         self.scanner = scanner
         scanner.start()
+    }
+
+    private func append(_ text: String) {
+        lines.insert(Line(text: text), at: 0)
+        // Placeholder cap; the real feed store arrives with the UI.
+        if lines.count > 200 {
+            lines.removeLast()
+        }
     }
 
     /// One feed line, in the firmware displays' visual language:

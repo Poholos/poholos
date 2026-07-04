@@ -69,5 +69,11 @@ scanner.onEvent = { event in
     }
 }
 
+// First frame of each distinct undecodable length: the signal the
+// ext-adv POC transmitter produces (its payload is not a poholos frame).
+scanner.onUndecodableFrame = { length, rssi in
+    print("? \(length)-byte undecodable frame under company id f10c (\(rssi) dBm)")
+}
+
 scanner.start()
 dispatchMain()

@@ -61,12 +61,23 @@ public final class MeshScanner: NSObject {
     /// scanner's queue.
     public var onStateChange: ((CBManagerState) -> Void)?
 
+    /// Called on the *first* frame of each distinct length that carried
+    /// the poholos company id but failed to decode (length, RSSI). Once
+    /// per length rather than per frame, because such frames repeat
+    /// continuously and have no seen-cache to suppress them.
+    ///
+    /// This is the platform-validation instrument: a non-protocol test
+    /// transmitter (the ext-adv POC) shows up here, and the reported
+    /// length answers whether the OS surfaced the full extended payload.
+    public var onUndecodableFrame: ((Int, Int) -> Void)?
+
     /// Frames that carried the poholos company id but failed to decode.
     public private(set) var undecodableFrameCount = 0
 
     private let queue = DispatchQueue(label: "com.poholos.monitor.scanner")
     private var central: CBCentralManager?
     private var scanRequested = false
+    private var reportedUndecodableLengths: Set<Int> = []
 
     /// Creates a scanner routing as the node with the given display name.
     public init?(name: String) {
@@ -147,10 +158,13 @@ extension MeshScanner: CBCentralManagerDelegate {
                     frameLength: frame.count
                 ))
         } catch {
-            // A frame under our company id that the engine rejects:
-            // either radio corruption or a foreign device squatting on
-            // the id. Counted for the diagnostics screen, not surfaced.
+            // A frame under our company id that the engine rejects: a
+            // test transmitter, radio corruption, or a foreign device
+            // squatting on the id.
             undecodableFrameCount += 1
+            if reportedUndecodableLengths.insert(frame.count).inserted {
+                onUndecodableFrame?(frame.count, RSSI.intValue)
+            }
         }
     }
 }

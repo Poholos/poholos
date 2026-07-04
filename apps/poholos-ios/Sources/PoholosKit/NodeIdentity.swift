@@ -7,13 +7,14 @@ import Foundation
     import UIKit
 #endif
 
-/// Derives this device's stable node identity, e.g. `iphone-3f2a`.
+/// Derives this device's stable node identity, e.g. `iph-3f2a`.
 ///
 /// The format matches `NodeId` everywhere else in poholos: a name of
 /// `[a-z0-9-]` plus a `-xxxx` suffix of 4 lowercase hex characters. A
 /// stable identity means telegram-addressed-to-me detection works today
 /// (RX-only) and peers can already address this device when it learns
-/// to transmit.
+/// to transmit. Prefixes are 3 letters (`iph`/`ipd`/`mac`) to keep the
+/// full name short for hand-typed telegrams (`@iph-3f2a hi`).
 public enum NodeIdentity {
     /// The local node's full display name.
     ///
@@ -27,7 +28,7 @@ public enum NodeIdentity {
 
     private static var prefix: String {
         #if os(iOS)
-            return UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            return UIDevice.current.userInterfaceIdiom == .pad ? "ipd" : "iph"
         #else
             return "mac"
         #endif
