@@ -59,7 +59,7 @@ simulator has no Bluetooth, so the feed only moves on hardware or the Mac.
 Bundle id `com.poholos.monitor`, deployment target iOS 16, Bluetooth usage
 description set via build settings (no checked-in Info.plist).
 
-## Hardware validation results (2026-07-03, iPhone 15 Pro, iOS 26.5)
+## Hardware validation results (iPhone 15 Pro, iOS 26.5)
 
 - ✅ **v0 RX from every sender class** — Windows CLI, macOS CLI, and
   micro:bit legacy-PDU frames all appear in the feed; one line per message
