@@ -64,6 +64,7 @@ impl Advertiser {
     /// Fails if WinRT cannot construct a publisher, e.g. no radio.
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "platform HAL signature; other OSes await here"
     )]
     pub async fn new() -> Result<Self> {
@@ -98,6 +99,7 @@ impl Advertiser {
     /// the new one.
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "platform HAL signature; other OSes await here"
     )]
     pub async fn set_frame(&mut self, frame: &ExtFrame) -> Result<()> {
