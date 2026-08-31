@@ -55,6 +55,7 @@ impl UdpTransport {
     /// be enabled.
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "transport constructors share an async signature; BLE awaits"
     )]
     pub async fn new(port: u16) -> Result<Self> {
