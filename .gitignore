@@ -16,6 +16,9 @@ target
 # Throwaway spikes (see poc/ext-adv/README.md)
 poc/
 
+# VS Code (debug/launch configs are machine-personal)
+.vscode/
+
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

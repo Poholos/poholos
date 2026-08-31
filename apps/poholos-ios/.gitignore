@@ -1,0 +1,6 @@
+# Installed by refresh-ffi.sh from the cargo target directory.
+/Frameworks/
+.build/
+.swiftpm/
+build/
+xcuserdata/

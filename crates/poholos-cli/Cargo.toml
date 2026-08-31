@@ -38,8 +38,10 @@ tokio = { version = "1", features = [
     "time",
 ] }
 
-# Central-role scanning works cross-platform through btleplug.
-btleplug = "0.12"
+# Central-role scanning works cross-platform through btleplug. 0.13 ships
+# the WinRT watcher's `SetUseCodedPhy(true)`, so the Windows scanner hears
+# coded-primary (long range) BLE 5 advertisements without our fork.
+btleplug = "0.13"
 
 # Peripheral-role advertising is platform specific (see src/transport/ble/).
 [target.'cfg(target_os = "linux")'.dependencies]

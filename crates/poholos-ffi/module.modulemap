@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2026 Ivan Petrouchtchak
+//
+// Clang module map bundled next to the generated header by
+// build-xcframework.sh, so Swift code can `import PoholosFFI` directly
+// instead of going through a bridging header.
+module PoholosFFI {
+    header "poholos_ffi.h"
+    export *
+}

@@ -142,11 +142,10 @@ carries the full ~200. Linux (my test box is BLE 4.2-only) and macOS
 remain version-0 senders. Short messages stay version 0, so the mesh stays
 fully connected regardless of who speaks version 1.
 
-Coded-PHY reception on Windows needs one line btleplug 0.12 lacks
-(`UseCodedPhy` on the WinRT watcher): the workspace pins a patched fork
-via `[patch.crates-io]` until the upstream fix
+Coded-PHY reception on Windows needs one line btleplug 0.12 lacked
+(`UseCodedPhy` on the WinRT watcher); the fix was upstreamed
 ([deviceplug/btleplug#463](https://github.com/deviceplug/btleplug/pull/463))
-ships in a release.
+and ships in btleplug 0.13, which the workspace now uses.
 
 ## Verifying a fresh checkout
 
