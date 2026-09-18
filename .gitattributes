@@ -1,0 +1,5 @@
+# LF in the repo and on every checkout (Windows laptop, Mac, Linux CI),
+# regardless of any machine's core.autocrlf. Only Windows batch files need CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

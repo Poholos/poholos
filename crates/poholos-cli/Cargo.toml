@@ -20,7 +20,7 @@ anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 mimalloc = "0.1"
 clap = { version = "4", features = ["derive"] }
-rand = "0.8"
+rand = "0.10"
 futures = "0.3"
 # macOS frames ride in a 128-bit service UUID; this builds/reads them.
 uuid = "1"
@@ -40,8 +40,10 @@ tokio = { version = "1", features = [
 
 # Central-role scanning works cross-platform through btleplug. 0.13 ships
 # the WinRT watcher's `SetUseCodedPhy(true)`, so the Windows scanner hears
-# coded-primary (long range) BLE 5 advertisements without our fork.
-btleplug = "0.13"
+# coded-primary (long range) BLE 5 advertisements without our fork; 0.13.1
+# requests it only on adapters that support Coded PHY (older dongles stayed
+# silent otherwise).
+btleplug = "0.13.1"
 
 # Peripheral-role advertising is platform specific (see src/transport/ble/).
 [target.'cfg(target_os = "linux")'.dependencies]
