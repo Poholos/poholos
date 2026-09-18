@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "poholos-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "ble-peripheral-rust",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "poholos-ffi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "poholos",
 ]
